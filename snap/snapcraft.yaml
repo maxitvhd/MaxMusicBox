@@ -8,6 +8,12 @@ description: |
   compressor, AGC e limiter), fila/Auto-DJ persistidos em SQLite e recarga de
   créditos via Pix com split pelo Mercado Pago.
 
+title: MaxMusicBox
+contact: mailto:maximoemsolucoes@gmail.com
+issues: https://github.com/maxitvhd/MaxMusicBox/issues
+source-code: https://github.com/maxitvhd/MaxMusicBox
+website: https://github.com/maxitvhd/MaxMusicBox
+
 grade: stable
 confinement: strict
 
@@ -65,7 +71,3 @@ parts:
           printf '%s=%s\n' "$v" "$val" >> "$SNAPCRAFT_PART_INSTALL/share/maxmusicbox/.env"
         fi
       done
-
-layout:
-  /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
-    bind: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1
