@@ -124,12 +124,35 @@ pub fn perform_heartbeat_sync(app_handle: &AppHandle) -> Result<Value, String> {
 
                         // Atualiza configurações seguras recebidas remotamente (ex: credenciais do Mercado Pago)
                         if let Some(remoto) = data.get("configuracoes_remotas") {
-                            if let Some(mp_public) = remoto.get("mp_public_key").and_then(|v| v.as_str()) {
-                                std::env::set_var("MP_PUBLIC_KEY", mp_public);
+                            if let Some(v) = remoto.get("mp_client_id").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_CLIENT_ID", v);
                             }
-                            if let Some(mp_token) = remoto.get("mp_access_token").and_then(|v| v.as_str()) {
-                                std::env::set_var("MP_ACCESS_TOKEN", mp_token);
+                            if let Some(v) = remoto.get("mp_client_secret").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_CLIENT_SECRET", v);
                             }
+                            if let Some(v) = remoto.get("mp_public_key").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_PUBLIC_KEY", v);
+                            }
+                            if let Some(v) = remoto.get("mp_access_token").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_ACCESS_TOKEN", v);
+                            }
+                            if let Some(v) = remoto.get("mp_redirect_uri").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_REDIRECT_URI", v);
+                            }
+                            if let Some(v) = remoto.get("mp_auth_url").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_AUTH_URL", v);
+                            }
+                            if let Some(v) = remoto.get("mp_payer_email").and_then(|v| v.as_str()) {
+                                std::env::set_var("MP_PAYER_EMAIL", v);
+                            }
+                            if let Some(v) = remoto.get("mp_split_percent") {
+                                if let Some(s) = v.as_str() {
+                                    std::env::set_var("MP_SPLIT_PERCENT", s);
+                                } else if let Some(n) = v.as_f64() {
+                                    std::env::set_var("MP_SPLIT_PERCENT", n.to_string());
+                                }
+                            }
+                            println!("[SYNC RUST]: Credenciais completas Mercado Pago sincronizadas com sucesso.");
                         }
 
                         let lic_info = LicenseInfo {
