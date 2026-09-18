@@ -34,9 +34,6 @@ parts:
   maxmusicbox:
     plugin: nil
     source: .
-    build-snaps:
-      - rustup
-      - node/20/stable
     build-packages:
       - build-essential
       - pkg-config
@@ -46,11 +43,16 @@ parts:
       - libayatana-appindicator3-dev
       - librsvg2-dev
       - libasound2-dev
+      - curl
+      - ca-certificates
     stage-packages:
       - libasound2t64
     override-build: |
+      set -eu
+      curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+      apt-get install -y nodejs
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
       export PATH="$HOME/.cargo/bin:$PATH"
-      rustup default stable
       npm ci
       npm run build
       cargo build --release --manifest-path src-tauri/Cargo.toml
