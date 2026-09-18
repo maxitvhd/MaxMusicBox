@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      STORE_LOGIN: ${{ secrets.STORE_LOGIN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +27,7 @@ jobs:
           path: ${{ steps.snapcraft.outputs.snap }}
 
       - name: Publish to edge (main)
-        if: startsWith(github.ref, 'refs/heads/') && secrets.STORE_LOGIN != ''
+        if: startsWith(github.ref, 'refs/heads/') && env.STORE_LOGIN != ''
         uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN }}
@@ -34,7 +36,7 @@ jobs:
           release: edge
 
       - name: Publish to stable (tags)
-        if: startsWith(github.ref, 'refs/tags/') && secrets.STORE_LOGIN != ''
+        if: startsWith(github.ref, 'refs/tags/') && env.STORE_LOGIN != ''
         uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.STORE_LOGIN }}
