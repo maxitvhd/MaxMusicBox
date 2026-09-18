@@ -57,6 +57,14 @@ parts:
       npm run build
       cargo build --release --manifest-path src-tauri/Cargo.toml
       install -Dm755 src-tauri/target/release/maxmusicbox "$SNAPCRAFT_PART_INSTALL/bin/maxmusicbox"
+      mkdir -p "$SNAPCRAFT_PART_INSTALL/share/maxmusicbox"
+      : > "$SNAPCRAFT_PART_INSTALL/share/maxmusicbox/.env"
+      for v in MP_CLIENT_ID MP_CLIENT_SECRET MP_REDIRECT_URI MP_ACCESS_TOKEN MP_SPLIT_PERCENT MP_PAYER_EMAIL MP_AUTH_URL; do
+        val="${!v:-}"
+        if [ -n "$val" ]; then
+          printf '%s=%s\n' "$v" "$val" >> "$SNAPCRAFT_PART_INSTALL/share/maxmusicbox/.env"
+        fi
+      done
 
 layout:
   /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1:

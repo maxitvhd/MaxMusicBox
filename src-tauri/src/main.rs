@@ -680,7 +680,17 @@ fn main() {
         return;
     }
 
-    // Carrega .env (dev) de locais comuns
+    // Carrega .env (dev/produção) de locais comuns.
+    // Prioridade: env do processo já definido vence; entre arquivos, o primeiro muda o valor.
+    if let Some(home) = std::env::var_os("HOME") {
+        load_env_file(&PathBuf::from(home).join(".config/maxmusicbox/.env"));
+    }
+    if let Some(snap) = std::env::var_os("SNAP") {
+        load_env_file(&PathBuf::from(snap).join("share/maxmusicbox/.env"));
+    }
+    if let Some(dir) = app_dir() {
+        load_env_file(&dir.join(".env"));
+    }
     if let Ok(cwd) = std::env::current_dir() {
         load_env_file(&cwd.join(".env"));
         load_env_file(&cwd.join("../.env"));
