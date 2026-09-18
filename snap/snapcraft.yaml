@@ -1,0 +1,61 @@
+name: maxmusicbox
+base: core24
+version: '1.0.0'
+summary: Jukebox profissional em modo quiosque com Pix via Mercado Pago
+description: |
+  MaxMusicBox é uma jukebox profissional para bares e eventos:
+  catálogo local (MP3/FLAC/WAV/OGG/M4A), DSP em tempo real (EQ de 5 bandas,
+  compressor, AGC e limiter), fila/Auto-DJ persistidos em SQLite e recarga de
+  créditos via Pix com split pelo Mercado Pago.
+
+grade: stable
+confinement: strict
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  maxmusicbox:
+    command: bin/maxmusicbox
+    extensions: [gnome]
+    plugs:
+      - audio-playback
+      - alsa
+      - home
+      - network
+      - network-bind
+      - removable-media
+    environment:
+      WEBKIT_DISABLE_COMPOSITING_MODE: '1'
+      WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+
+parts:
+  maxmusicbox:
+    plugin: nil
+    source: .
+    build-snaps:
+      - rustup
+      - node/20/stable
+    build-packages:
+      - build-essential
+      - pkg-config
+      - libssl-dev
+      - libgtk-3-dev
+      - libwebkit2gtk-4.1-dev
+      - libayatana-appindicator3-dev
+      - librsvg2-dev
+      - libasound2-dev
+    stage-packages:
+      - libasound2t64
+    override-build: |
+      export PATH="$HOME/.cargo/bin:$PATH"
+      rustup default stable
+      npm ci
+      npm run build
+      cargo build --release --manifest-path src-tauri/Cargo.toml
+      install -Dm755 src-tauri/target/release/maxmusicbox "$SNAPCRAFT_PART_INSTALL/bin/maxmusicbox"
+
+layout:
+  /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1:
+    bind: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/webkit2gtk-4.1

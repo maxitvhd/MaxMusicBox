@@ -1,0 +1,137 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Font utilities */
+  .font-vfd {
+    font-family: 'Share Tech Mono', 'VT323', monospace;
+  }
+  .font-tech {
+    font-family: 'Chakra Petch', sans-serif;
+  }
+  .font-modern {
+    font-family: 'Outfit', sans-serif;
+  }
+
+  /* Neon Vinyl Theme Effects */
+  .neon-glow-cyan {
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.45), 0 0 30px rgba(6, 182, 212, 0.2);
+  }
+  .neon-glow-magenta {
+    box-shadow: 0 0 15px rgba(236, 72, 153, 0.45), 0 0 30px rgba(236, 72, 153, 0.2);
+  }
+  .neon-border-cyan {
+    border-color: #06b6d4;
+    box-shadow: 0 0 10px rgba(6, 182, 212, 0.6), inset 0 0 10px rgba(6, 182, 212, 0.3);
+  }
+  .neon-border-magenta {
+    border-color: #ec4899;
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.6), inset 0 0 10px rgba(236, 72, 153, 0.3);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 8px rgba(6, 182, 212, 0.8), 0 0 18px rgba(6, 182, 212, 0.4);
+  }
+  .text-glow-magenta {
+    text-shadow: 0 0 8px rgba(236, 72, 153, 0.8), 0 0 18px rgba(236, 72, 153, 0.4);
+  }
+
+  /* Amp Vintage Theme Effects */
+  .brushed-metal {
+    background: linear-gradient(135deg, #1f2227 0%, #2b3038 25%, #1d2025 50%, #303740 75%, #181b20 100%);
+    background-size: 100% 100%;
+  }
+
+  .wood-panel-left {
+    background: repeating-linear-gradient(
+      90deg,
+      #3d1f0d,
+      #3d1f0d 6px,
+      #4e2810 6px,
+      #4e2810 12px,
+      #301708 12px,
+      #301708 18px
+    );
+    box-shadow: inset -5px 0 15px rgba(0, 0, 0, 0.8);
+  }
+
+  .wood-panel-right {
+    background: repeating-linear-gradient(
+      90deg,
+      #301708,
+      #301708 6px,
+      #4e2810 6px,
+      #4e2810 12px,
+      #3d1f0d 12px,
+      #3d1f0d 18px
+    );
+    box-shadow: inset 5px 0 15px rgba(0, 0, 0, 0.8);
+  }
+
+  .vintage-neumorphic-btn {
+    background: linear-gradient(145deg, #2a2e36, #1c1f24);
+    box-shadow: 4px 4px 8px #101215, -3px -3px 6px #343a45;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .vintage-neumorphic-btn:active, .vintage-neumorphic-btn.active {
+    background: linear-gradient(145deg, #181b20, #252830);
+    box-shadow: inset 3px 3px 6px #0d0f12, inset -2px -2px 5px #323742;
+  }
+
+  .vfd-glow-amber {
+    color: #f59e0b;
+    text-shadow: 0 0 6px rgba(245, 158, 11, 0.8), 0 0 12px rgba(245, 158, 11, 0.3);
+  }
+  .vfd-glow-green {
+    color: #10b981;
+    text-shadow: 0 0 6px rgba(16, 185, 129, 0.8), 0 0 12px rgba(16, 185, 129, 0.3);
+  }
+}
+
+/* Vinyl rotation animation */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 4.5s linear infinite;
+}
+
+.animate-spin-paused {
+  animation-play-state: paused;
+}
+
+/* Marquee text */
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 14s linear infinite;
+}
+
+/* Custom kiosk scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}

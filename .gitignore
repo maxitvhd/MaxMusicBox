@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Rust / Tauri
+src-tauri/target/
+
+# Banco operacional local
+banco/
+
+# Biblioteca local de músicas (fora do controle de versão)
+MUSICAS/

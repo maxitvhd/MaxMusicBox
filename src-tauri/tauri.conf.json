@@ -1,0 +1,47 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MaxMusicBox",
+  "version": "1.0.0",
+  "identifier": "com.maxmusicbox.kiosk",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MaxMusicBox - Jukebox Kiosk",
+        "width": 1920,
+        "height": 1080,
+        "fullscreen": true,
+        "resizable": false,
+        "label": "main"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Audio",
+    "shortDescription": "Jukebox Profissional Tauri + Rust",
+    "longDescription": "Jukebox profissional em modo quiosque com catálogo local, DSP em tempo real e pagamentos Pix via Mercado Pago.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    }
+  }
+}

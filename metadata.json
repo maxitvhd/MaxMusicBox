@@ -1,0 +1,7 @@
+{
+  "name": "Jukebox Pro",
+  "description": "Professional jukebox application featuring multiple themes, category-based music navigation, and administrative controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
