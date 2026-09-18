@@ -24,6 +24,7 @@ const VAULT_MASK: &[u8] = b"MAXIMO_SECURITY_CORE_VAL_2026";
 const COMPILED_CLIENT_ID: &[u8] = &[122, 112, 111, 113, 116, 123, 107, 99, 115, 122, 101, 96, 126, 100, 109, 110];
 const COMPILED_CLIENT_SECRET: &[u8] = &[46, 56, 111, 112, 23, 1, 46, 39, 8, 39, 39, 22, 51, 48, 19, 29, 39, 35, 52, 11, 109, 39, 119, 29, 9, 126, 70, 11, 98, 25, 117, 106];
 const COMPILED_PUBLIC_KEY: &[u8] = &[12, 17, 8, 22, 24, 28, 13, 126, 112, 113, 52, 48, 45, 109, 110, 109, 110, 121, 49, 118, 105, 123, 117, 126, 60, 10, 29, 83, 0, 122, 114, 117, 122, 127, 45, 111, 100, 124, 37, 97, 51, 40, 102, 109];
+#[allow(dead_code)]
 const COMPILED_ACCESS_TOKEN: &[u8] = &[12, 17, 8, 22, 24, 28, 13, 126, 114, 114, 98, 106, 112, 96, 109, 111, 117, 118, 98, 119, 104, 102, 117, 125, 114, 2, 9, 3, 1, 124, 114, 117, 120, 40, 126, 60, 97, 32, 117, 51, 102, 121, 53, 108, 107, 117, 46, 97, 38, 58, 51, 114, 41, 108, 3, 6, 6, 80, 124, 118, 58, 45, 121, 44, 114, 107, 116, 112, 103, 100, 125, 100, 109, 103];
 const COMPILED_REDIRECT_URI: &[u8] = &[37, 53, 44, 57, 62, 117, 112, 124, 40, 34, 45, 59, 36, 59, 119, 43, 38, 44, 124, 39, 45, 121, 44, 60, 112, 81, 81, 94, 90, 47, 32, 59, 34, 98, 34, 62, 43, 40, 54, 38, 59, 42, 54, 54, 39];
 const COMPILED_AUTH_URL: &[u8] = &[37, 53, 44, 57, 62, 117, 112, 124, 36, 54, 33, 58, 103, 57, 60, 45, 32, 46, 54, 42, 47, 55, 38, 35, 113, 81, 95, 95, 25, 44, 52, 44, 33, 34, 61, 54, 41, 36, 55, 60, 61, 39];
@@ -124,7 +125,7 @@ pub fn init_compiled_fallback_vault(app_handle: &AppHandle) {
         std::env::set_var("MP_CLIENT_ID", deobfuscate(COMPILED_CLIENT_ID));
         std::env::set_var("MP_CLIENT_SECRET", deobfuscate(COMPILED_CLIENT_SECRET));
         std::env::set_var("MP_PUBLIC_KEY", deobfuscate(COMPILED_PUBLIC_KEY));
-        std::env::set_var("MP_ACCESS_TOKEN", deobfuscate(COMPILED_ACCESS_TOKEN));
+        std::env::remove_var("MP_ACCESS_TOKEN"); // Modo Marketplace: o token do vendedor vem via OAuth
         std::env::set_var("MP_REDIRECT_URI", deobfuscate(COMPILED_REDIRECT_URI));
         std::env::set_var("MP_AUTH_URL", deobfuscate(COMPILED_AUTH_URL));
         std::env::set_var("MP_PAYER_EMAIL", deobfuscate(COMPILED_PAYER_EMAIL));
@@ -144,7 +145,13 @@ fn apply_credentials_to_env(remoto: &Value) {
         std::env::set_var("MP_PUBLIC_KEY", v);
     }
     if let Some(v) = remoto.get("mp_access_token").and_then(|v| v.as_str()) {
-        std::env::set_var("MP_ACCESS_TOKEN", v);
+        if !v.trim().is_empty() && !v.starts_with("APP_USR-7178944069027041") {
+            std::env::set_var("MP_ACCESS_TOKEN", v);
+        } else {
+            std::env::remove_var("MP_ACCESS_TOKEN");
+        }
+    } else {
+        std::env::remove_var("MP_ACCESS_TOKEN");
     }
     if let Some(v) = remoto.get("mp_redirect_uri").and_then(|v| v.as_str()) {
         std::env::set_var("MP_REDIRECT_URI", v);
