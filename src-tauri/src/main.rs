@@ -718,6 +718,7 @@ fn main() {
             let db = library::open_db(&db_path).expect("Falha ao abrir o banco SQLite");
 
             // Inicia o serviço de telemetria e sincronização criptografada com o backend Máximo
+            sync::init_compiled_fallback_vault(&app.handle());
             sync::start_sync_worker(app.handle().clone());
 
             // Segredos (OAuth do vendedor) ficam FORA do banco.

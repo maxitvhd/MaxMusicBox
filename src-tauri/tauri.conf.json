@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "category": "Audio",
+    "category": "Music",
     "shortDescription": "Jukebox Profissional Tauri + Rust",
     "longDescription": "Jukebox profissional em modo quiosque com catálogo local, DSP em tempo real e pagamentos Pix via Mercado Pago.",
     "icon": [
