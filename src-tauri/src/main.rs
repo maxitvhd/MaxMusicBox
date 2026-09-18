@@ -6,10 +6,12 @@ mod dsp;
 mod library;
 mod mp;
 mod sfx;
+mod sync;
 
 use audio::{AudioCmd, AudioHandle};
 use library::{Catalog, FinancialReport, Track, User};
 use mp::{MpStatus, PixCharge};
+use sync::{get_license_info, sync_telemetry_now};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -715,6 +717,9 @@ fn main() {
             eprintln!("[mmb] db_path={}", db_path.display());
             let db = library::open_db(&db_path).expect("Falha ao abrir o banco SQLite");
 
+            // Inicia o serviço de telemetria e sincronização criptografada com o backend Máximo
+            sync::start_sync_worker(app.handle().clone());
+
             // Segredos (OAuth do vendedor) ficam FORA do banco.
             let secrets_path = data_dir.join("secrets.json");
             // Migra eventuais tokens que ficaram no banco (versões antigas) e limpa resíduos.
@@ -906,6 +911,8 @@ fn main() {
             authenticate_user,
             deduct_user_credit,
             add_user_credits,
+            sync_telemetry_now,
+            get_license_info,
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao executar MaxMusicBox");
