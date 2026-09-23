@@ -125,7 +125,9 @@ pub fn init_compiled_fallback_vault(app_handle: &AppHandle) {
         std::env::set_var("MP_CLIENT_ID", deobfuscate(COMPILED_CLIENT_ID));
         std::env::set_var("MP_CLIENT_SECRET", deobfuscate(COMPILED_CLIENT_SECRET));
         std::env::set_var("MP_PUBLIC_KEY", deobfuscate(COMPILED_PUBLIC_KEY));
-        std::env::remove_var("MP_ACCESS_TOKEN"); // Modo Marketplace: o token do vendedor vem via OAuth
+        if std::env::var("MP_ACCESS_TOKEN").unwrap_or_default().trim().is_empty() {
+            std::env::set_var("MP_ACCESS_TOKEN", deobfuscate(COMPILED_ACCESS_TOKEN));
+        }
         std::env::set_var("MP_REDIRECT_URI", deobfuscate(COMPILED_REDIRECT_URI));
         std::env::set_var("MP_AUTH_URL", deobfuscate(COMPILED_AUTH_URL));
         std::env::set_var("MP_PAYER_EMAIL", deobfuscate(COMPILED_PAYER_EMAIL));
@@ -145,13 +147,10 @@ fn apply_credentials_to_env(remoto: &Value) {
         std::env::set_var("MP_PUBLIC_KEY", v);
     }
     if let Some(v) = remoto.get("mp_access_token").and_then(|v| v.as_str()) {
-        if !v.trim().is_empty() && !v.starts_with("APP_USR-7178944069027041") {
-            std::env::set_var("MP_ACCESS_TOKEN", v);
-        } else {
-            std::env::remove_var("MP_ACCESS_TOKEN");
+        let trimmed = v.trim();
+        if !trimmed.is_empty() {
+            std::env::set_var("MP_ACCESS_TOKEN", trimmed);
         }
-    } else {
-        std::env::remove_var("MP_ACCESS_TOKEN");
     }
     if let Some(v) = remoto.get("mp_redirect_uri").and_then(|v| v.as_str()) {
         std::env::set_var("MP_REDIRECT_URI", v);
@@ -171,6 +170,26 @@ fn apply_credentials_to_env(remoto: &Value) {
     }
 }
 
+fn get_public_ip() -> String {
+    if let Ok(resp) = ureq::get("https://api.ipify.org").timeout(Duration::from_secs(4)).call() {
+        if let Ok(ip) = resp.into_string() {
+            let clean = ip.trim();
+            if !clean.is_empty() {
+                return clean.to_string();
+            }
+        }
+    }
+    if let Ok(resp) = ureq::get("https://icanhazip.com").timeout(Duration::from_secs(4)).call() {
+        if let Ok(ip) = resp.into_string() {
+            let clean = ip.trim();
+            if !clean.is_empty() {
+                return clean.to_string();
+            }
+        }
+    }
+    "127.0.0.1".to_string()
+}
+
 /// Executa a sincronização segura via Rust diretamente com o backend da Maximo Tecnologias
 pub fn perform_heartbeat_sync(app_handle: &AppHandle) -> Result<Value, String> {
     let machine_id = get_or_create_machine_id(app_handle);
@@ -181,13 +200,36 @@ pub fn perform_heartbeat_sync(app_handle: &AppHandle) -> Result<Value, String> {
     let os_info = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
     let versao = "1.2.0";
 
-    // Cria o payload de telemetria
+    let public_ip = get_public_ip();
+
+    // Obter faturamento total e dados de pagamento da máquina
+    let (total_revenue, is_split_active, split_percent) = if let Some(state) = app_handle.try_state::<crate::AppState>() {
+        let revenue = if let Ok(conn) = state.db.lock() {
+            conn.query_row("SELECT COALESCE(SUM(amount), 0.0) FROM finance_log", [], |r| r.get::<_, f64>(0))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let secrets = crate::mp::load_secrets(&state.secrets_path);
+        let mp_status = crate::mp::status(&secrets);
+        (revenue, mp_status.connected && mp_status.is_oauth, mp_status.split_percent)
+    } else {
+        (0.0, false, 5.0)
+    };
+
+    // Cria o payload de telemetria criptografado
     let payload_obj = json!({
         "slug_programa": "maxmusicbox",
         "machine_id": machine_id,
         "hostname": hostname,
         "os_info": os_info,
         "versao": versao,
+        "public_ip": public_ip,
+        "pagamento": {
+            "is_split_active": is_split_active,
+            "split_percent": split_percent,
+            "total_faturamento": total_revenue
+        },
         "hardware": {
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,
@@ -243,6 +285,29 @@ pub fn perform_heartbeat_sync(app_handle: &AppHandle) -> Result<Value, String> {
                             let plain_bytes = serde_json::to_vec(remoto).unwrap_or_default();
                             let encrypted = cipher_with_machine_key(&plain_bytes, &machine_id);
                             let _ = fs::write(&cache_file, &encrypted);
+                        }
+
+                        // 2. Atualiza e armazena os anúncios enviados pela nuvem Máximo
+                        if let Some(anuncios) = data.get("anuncios") {
+                            let serialized = serde_json::to_string(anuncios).unwrap_or_default();
+                            if let Some(state) = app_handle.try_state::<crate::AppState>() {
+                                if let Ok(conn) = state.db.lock() {
+                                    let _ = crate::library::set_setting(&conn, "cached_anuncios", &serialized);
+                                }
+                            }
+                            let _ = app_handle.emit("ads_updated", anuncios.clone());
+                            println!("[SYNC RUST]: Anúncios da nuvem recebidos e sincronizados ({} itens).", anuncios.as_array().map(|a| a.len()).unwrap_or(0));
+                        }
+
+                        // 3. Atualiza e armazena configuração de screensaver
+                        if let Some(screensaver) = data.get("screensaver_config") {
+                            let serialized = serde_json::to_string(screensaver).unwrap_or_default();
+                            if let Some(state) = app_handle.try_state::<crate::AppState>() {
+                                if let Ok(conn) = state.db.lock() {
+                                    let _ = crate::library::set_setting(&conn, "cached_screensaver", &serialized);
+                                }
+                            }
+                            let _ = app_handle.emit("screensaver_updated", screensaver.clone());
                         }
 
                         let lic_info = LicenseInfo {

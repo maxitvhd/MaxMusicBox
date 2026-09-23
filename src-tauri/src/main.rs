@@ -170,9 +170,21 @@ fn rescan_library(app: AppHandle, state: State<'_, AppState>) -> Result<usize, S
 
 #[tauri::command]
 fn set_library_path(path: String, state: State<'_, AppState>) -> Result<usize, String> {
-    let pb = PathBuf::from(&path);
+    let clean = path.trim();
+    if clean.is_empty() {
+        return Err("Informe o caminho da pasta de músicas".to_string());
+    }
+
+    let mut pb = PathBuf::from(clean);
+    if clean.starts_with("~/") || clean == "~" {
+        if let Some(home) = std::env::var_os("HOME") {
+            let relative = clean.strip_prefix("~/").unwrap_or("");
+            pb = PathBuf::from(home).join(relative);
+        }
+    }
+
     if !pb.is_dir() {
-        return Err("Pasta inválida".to_string());
+        return Err(format!("A pasta '{}' não foi encontrada ou não é um diretório válido.", pb.display()));
     }
     *state.library_root.lock().map_err(|e| e.to_string())? = Some(pb.clone());
     {
@@ -183,13 +195,21 @@ fn set_library_path(path: String, state: State<'_, AppState>) -> Result<usize, S
 }
 
 #[tauri::command]
-fn pick_music_folder(app: AppHandle) -> Result<Option<String>, String> {
+async fn pick_music_folder(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let folder = app.dialog().file().blocking_pick_folder();
-    match folder {
-        Some(f) => Ok(f.into_path().ok().map(|p| p.to_string_lossy().to_string())),
-        None => Ok(None),
-    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let path = folder
+            .and_then(|f| f.into_path().ok())
+            .map(|p| p.to_string_lossy().to_string());
+        let _ = tx.send(path);
+    });
+
+    tauri::async_runtime::spawn_blocking(move || {
+        rx.recv().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -440,6 +460,84 @@ fn get_financial_report(state: State<'_, AppState>) -> Result<FinancialReport, S
 }
 
 #[tauri::command]
+fn get_cached_ads(state: State<'_, AppState>) -> Value {
+    let conn = match state.db.lock() {
+        Ok(c) => c,
+        Err(_) => return json!([]),
+    };
+    library::get_setting(&conn, "cached_anuncios")
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(|| json!([]))
+}
+
+#[tauri::command]
+fn get_cached_screensaver(state: State<'_, AppState>) -> Value {
+    let conn = match state.db.lock() {
+        Ok(c) => c,
+        Err(_) => return json!({}),
+    };
+    library::get_setting(&conn, "cached_screensaver")
+        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+        .unwrap_or_else(|| json!({}))
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+fn set_admin_pin(new_pin: Option<String>, newPin: Option<String>, state: State<'_, AppState>) -> Result<(), String> {
+    let pin = new_pin.or(newPin).ok_or_else(|| "PIN não informado.".to_string())?;
+    let clean = pin.trim();
+    if clean.len() < 4 || clean.len() > 6 || !clean.chars().all(|c| c.is_ascii_digit()) {
+        return Err("O PIN de admin deve conter entre 4 e 6 dígitos numéricos.".to_string());
+    }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    library::set_setting(&conn, "admin_pin", clean)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+fn verify_and_reset_admin_pin(recovery_code: Option<String>, recoveryCode: Option<String>, state: State<'_, AppState>) -> Result<String, String> {
+    let code = recovery_code.or(recoveryCode).ok_or_else(|| "Informe o código mestre de recuperação.".to_string())?;
+    let clean_code = code.trim();
+    if clean_code.is_empty() {
+        return Err("Informe o código mestre de recuperação.".to_string());
+    }
+
+    let now_local = chrono::Local::now();
+    let now_utc = chrono::Utc::now();
+
+    let mut valid_codes = Vec::new();
+
+    for dt in [now_local.naive_local(), now_utc.naive_utc()] {
+        let hour: i64 = dt.format("%H").to_string().parse().unwrap_or(0);
+        let day: i64 = dt.format("%d").to_string().parse().unwrap_or(0);
+        let year: i64 = dt.format("%Y").to_string().parse().unwrap_or(0);
+        let year_short: i64 = year % 100;
+
+        for offset in -2..=2 {
+            let h = (hour + offset).rem_euclid(24);
+            // Variante A: (hora + dia + ano) * 3
+            valid_codes.push(((h + day + year) * 3).to_string());
+            // Variante B: hora + dia + (ano * 3)
+            valid_codes.push((h + day + (year * 3)).to_string());
+            // Variante C: ano de 2 dígitos (hora + dia + 26) * 3
+            valid_codes.push(((h + day + year_short) * 3).to_string());
+            // Variante D: hora + dia + (26 * 3)
+            valid_codes.push((h + day + (year_short * 3)).to_string());
+        }
+    }
+
+    if valid_codes.iter().any(|c| c == clean_code) {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        library::set_setting(&conn, "admin_pin", DEFAULT_ADMIN_PIN)?;
+        eprintln!("[admin] PIN de administração resetado para o padrão com sucesso via código mestre.");
+        Ok(DEFAULT_ADMIN_PIN.to_string())
+    } else {
+        eprintln!("[admin] Tentativa de recuperação com código mestre inválido ou expirado.");
+        Err("Código de recuperação incorreto ou expirado.".to_string())
+    }
+}
+
+#[tauri::command]
 fn mp_oauth_start(app: AppHandle, state: State<'_, AppState>) {
     mp::start_oauth(app, state.secrets_path.clone());
 }
@@ -456,8 +554,16 @@ fn mp_oauth_status(state: State<'_, AppState>) -> MpStatus {
 }
 
 #[tauri::command]
-fn mp_disconnect(state: State<'_, AppState>) -> Result<(), String> {
-    mp::disconnect(&state.secrets_path)
+fn mp_disconnect(app: AppHandle, state: State<'_, AppState>) -> Result<MpStatus, String> {
+    mp::disconnect(&state.secrets_path)?;
+    if let Ok(conn) = state.db.lock() {
+        for k in ["mp_access_token", "mp_refresh_token", "mp_expires_at", "mp_user_id", "mp_pkce_verifier"] {
+            let _ = conn.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![k]);
+        }
+    }
+    let clean_status = mp::status(&mp::Secrets::default());
+    let _ = app.emit("mp_disconnected", &clean_status);
+    Ok(clean_status)
 }
 
 #[tauri::command]
@@ -524,9 +630,22 @@ fn authenticate_user(password: String, state: State<'_, AppState>) -> Result<Opt
 }
 
 #[tauri::command]
-fn deduct_user_credit(id: String, credits: i64, state: State<'_, AppState>) -> Result<bool, String> {
+fn deduct_user_credit(id: String, credits: i64, state: State<'_, AppState>) -> Result<library::DeductResult, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     library::deduct_user_credit(&conn, &id, credits)
+}
+
+#[tauri::command]
+fn calculate_credits(amount: f64, state: State<'_, AppState>) -> Result<i64, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    Ok(library::calculate_credits_for_amount(&conn, amount))
+}
+
+#[tauri::command]
+fn create_temp_user(credits: i64, state: State<'_, AppState>) -> Result<User, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let pin = format!("{:05}", (library::now_ms() % 100000));
+    library::create_or_topup_temp_user(&conn, &pin, credits)
 }
 
 #[tauri::command]
@@ -721,26 +840,9 @@ fn main() {
             sync::init_compiled_fallback_vault(&app.handle());
             sync::start_sync_worker(app.handle().clone());
 
-            // Segredos (OAuth do vendedor) ficam FORA do banco.
+            // Segredos (OAuth do vendedor) ficam estritamente em secrets.json.
             let secrets_path = data_dir.join("secrets.json");
-            // Migra eventuais tokens que ficaram no banco (versões antigas) e limpa resíduos.
-            let residue = mp::load_secrets(&secrets_path);
-            if residue.mp_access_token.is_none() {
-                if let Some(tok) = library::get_setting(&db, "mp_access_token") {
-                    if !tok.is_empty() {
-                        let migrated = mp::Secrets {
-                            mp_access_token: Some(tok),
-                            mp_refresh_token: library::get_setting(&db, "mp_refresh_token"),
-                            mp_expires_at: library::get_setting(&db, "mp_expires_at")
-                                .and_then(|v| v.parse().ok()),
-                            mp_user_id: library::get_setting(&db, "mp_user_id"),
-                            mp_pkce_verifier: None,
-                        };
-                        let _ = mp::save_secrets(&secrets_path, &migrated);
-                    }
-                }
-            }
-            for k in ["mp_access_token", "mp_refresh_token", "mp_expires_at", "mp_user_id"] {
+            for k in ["mp_access_token", "mp_refresh_token", "mp_expires_at", "mp_user_id", "mp_pkce_verifier"] {
                 let _ = db.execute("DELETE FROM settings WHERE key = ?1", rusqlite::params![k]);
             }
             eprintln!("[mmb] secrets_path={}", secrets_path.display());
@@ -813,19 +915,10 @@ fn main() {
             let current = audio.current.clone();
             std::thread::spawn(move || {
                 let mut pos_hist: Vec<f32> = vec![0.0; 16];
-                let mut ticks: u64 = 0;
                 loop {
-                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    std::thread::sleep(std::time::Duration::from_millis(25));
                     let (l, r) = meters.get_rms();
                     let (pl, pr) = meters.get_peaks();
-                    ticks += 1;
-                    if ticks % 120 == 0 {
-                        let spec = meters.get_spectrum();
-                        let peak_band = spec.iter().cloned().fold(0.0f32, f32::max);
-                        eprintln!(
-                            "[mmb] levels rms=({l:.3},{r:.3}) peak=({pl:.3},{pr:.3}) spec_max={peak_band:.3}"
-                        );
-                    }
                     let _ = handle.emit(
                         "audio_levels",
                         AudioLevelsPayload {
@@ -900,6 +993,8 @@ fn main() {
             set_autodj_config,
             add_credits,
             get_financial_report,
+            set_admin_pin,
+            verify_and_reset_admin_pin,
             mp_oauth_start,
             mp_oauth_complete,
             mp_oauth_status,
@@ -912,8 +1007,12 @@ fn main() {
             authenticate_user,
             deduct_user_credit,
             add_user_credits,
+            calculate_credits,
+            create_temp_user,
             sync_telemetry_now,
             get_license_info,
+            get_cached_ads,
+            get_cached_screensaver,
         ])
         .run(tauri::generate_context!())
         .expect("Erro ao executar MaxMusicBox");

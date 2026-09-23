@@ -4,6 +4,13 @@ import App from './App.tsx';
 import './index.css';
 import { tauriBridge } from './services/tauriBridge';
 
+console.log(
+  '%cMaxMusicBox 1.0.0 \n%cCriado pela Maximo tecnologias brasil.\nConheça mais dos nossos sistemas em: %cwww.maximo.tec.br',
+  'font-size: 24px; font-weight: bold; color: #ff0000; text-shadow: 1px 1px #000;',
+  'font-size: 14px; color: #aaa; font-weight: bold;',
+  'color: #00ffff; font-weight: bold;'
+);
+
 window.addEventListener('error', (e) =>
   tauriBridge.log(`window.error: ${e.message} @${e.filename}:${e.lineno}:${e.colno}`)
 );

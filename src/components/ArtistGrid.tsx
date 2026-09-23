@@ -48,62 +48,49 @@ export const ArtistGrid = () => {
 
   return (
     <div className="w-full select-none">
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="flex items-center gap-2">
-          <Users className={`w-4 h-4 ${isVintage ? 'text-amber-500' : 'text-pink-400'}`} />
-          <h3
-            className={`font-bold text-sm tracking-wider uppercase ${
-              isVintage ? 'font-tech text-amber-300' : 'text-slate-200'
-            }`}
-          >
-            Artistas {selectedCategory ? `• ${selectedCategory.name}` : ''}
-          </h3>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setPage(Math.max(0, currentPage - 1))}
-                disabled={currentPage === 0}
-                className="p-1 rounded bg-white/5 disabled:opacity-30 hover:bg-white/10 text-xs font-mono flex items-center gap-0.5"
-                title="Página anterior [-]"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span className="text-[10px]">[-]</span>
-              </button>
-              <span className="text-[11px] font-mono px-1 opacity-70">
-                {currentPage + 1}/{totalPages}
-              </span>
-              <button
-                onClick={() => setPage(Math.min(totalPages - 1, currentPage + 1))}
-                disabled={currentPage >= totalPages - 1}
-                className="p-1 rounded bg-white/5 disabled:opacity-30 hover:bg-white/10 text-xs font-mono flex items-center gap-0.5"
-                title="Próxima página [+]"
-              >
-                <span className="text-[10px]">[+]</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
-
-          {selectedArtist && (
+      {/* Discreet pagination bar if multiple pages */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-1 pb-1 text-xs">
+          <span className="text-[10px] font-mono opacity-60">
+            Artistas {selectedCategory ? `(${selectedCategory.name})` : ''} • Pág {currentPage + 1}/{totalPages}
+          </span>
+          <div className="flex items-center gap-1">
             <button
-              onClick={() => setSelectedArtist(null)}
-              className="text-xs text-cyan-400 hover:underline font-mono"
+              onClick={() => setPage(Math.max(0, currentPage - 1))}
+              disabled={currentPage === 0}
+              className="px-1.5 py-0.5 rounded bg-white/5 disabled:opacity-25 hover:bg-white/10 text-[10px] font-mono flex items-center gap-0.5"
+              title="Página anterior [-]"
             >
-              Ver todos
+              <ChevronLeft className="w-3 h-3" />
+              <span>[-]</span>
             </button>
-          )}
+            <button
+              onClick={() => setPage(Math.min(totalPages - 1, currentPage + 1))}
+              disabled={currentPage >= totalPages - 1}
+              className="px-1.5 py-0.5 rounded bg-white/5 disabled:opacity-25 hover:bg-white/10 text-[10px] font-mono flex items-center gap-0.5"
+              title="Próxima página [+]"
+            >
+              <span>[+]</span>
+              <ChevronRight className="w-3 h-3" />
+            </button>
+            {selectedArtist && (
+              <button
+                onClick={() => setSelectedArtist(null)}
+                className="ml-2 text-[10px] text-cyan-400 hover:underline font-mono"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <motion.div
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="flex items-center gap-4 overflow-x-auto pb-2 px-1 scroll-smooth"
+        className="flex items-center gap-2.5 overflow-x-auto py-0.5 px-1 no-scrollbar scroll-smooth"
+        style={{ scrollbarWidth: 'none' }}
       >
         {visibleArtists.map((artist: Artist, index: number) => {
           const isSelected = selectedArtist?.id === artist.id;
@@ -119,57 +106,61 @@ export const ArtistGrid = () => {
                   ? setSelectedArtist(null)
                   : openBrowser(selectedCategory?.id ?? null, artist.id)
               }
-              className="flex flex-col items-center gap-1.5 shrink-0 group cursor-pointer active:scale-95 transition-transform"
+              className={`flex items-center gap-2 shrink-0 px-2 py-1 rounded-xl border transition-all active:scale-95 group cursor-pointer ${
+                isSelected
+                  ? isVintage
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-200 ring-1 ring-amber-400'
+                    : 'bg-pink-950/40 border-pink-500 text-pink-200 ring-1 ring-pink-500'
+                  : isVintage
+                  ? 'bg-[#181a20] border-[#2f343f] hover:border-amber-600/60'
+                  : 'bg-[#0f172a]/80 border-slate-800 hover:border-cyan-600/60'
+              }`}
             >
-              {/* Circular Avatar with Discreet Keypad Number */}
+              {/* Circular Avatar with Keypad Number Overlay */}
               <div
-                className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden p-1 transition-all duration-200 border-2 ${
+                className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden shrink-0 border ${
                   isSelected
                     ? isVintage
-                      ? 'border-amber-400 ring-4 ring-amber-500/30'
-                      : 'neon-border-magenta shadow-[0_0_15px_rgba(236,72,153,0.5)]'
-                    : isVintage
-                    ? 'border-[#373c46] group-hover:border-amber-500/60'
-                    : 'border-slate-800 group-hover:border-cyan-500/60'
+                      ? 'border-amber-400'
+                      : 'border-pink-400'
+                    : 'border-white/10'
                 }`}
               >
-                {/* Number Badge */}
+                <img
+                  src={artist.avatar}
+                  alt={artist.name}
+                  className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                  crossOrigin="anonymous"
+                />
                 <div
-                  className={`absolute top-0 right-0 z-20 w-5 h-5 rounded-full flex items-center justify-center font-mono font-extrabold text-[10px] border shadow ${
+                  className={`absolute top-0 right-0 z-10 w-3.5 h-3.5 rounded-full flex items-center justify-center font-mono font-extrabold text-[8px] border ${
                     isSelected
                       ? 'bg-pink-500 text-white border-pink-300'
                       : isVintage
-                      ? 'bg-[#121418] text-amber-300 border-amber-600/70'
-                      : 'bg-slate-950 text-cyan-300 border-cyan-500/70'
+                      ? 'bg-black/80 text-amber-300 border-amber-600/70'
+                      : 'bg-black/80 text-cyan-300 border-cyan-500/70'
                   }`}
                   title={`Aperte ${artistKeyNum} no teclado numérico`}
                 >
                   {artistKeyNum}
                 </div>
-
-                <img
-                  src={artist.avatar}
-                  alt={artist.name}
-                  className="w-full h-full object-cover rounded-full group-hover:scale-105 transition-transform"
-                  crossOrigin="anonymous"
-                />
               </div>
 
-              {/* Artist Name & Count */}
-              <div className="text-center max-w-[100px]">
+              {/* Artist Info */}
+              <div className="text-left min-w-0 max-w-[85px] sm:max-w-[100px]">
                 <p
-                  className={`text-xs font-bold truncate ${
+                  className={`text-[11px] font-bold truncate leading-tight ${
                     isSelected
                       ? isVintage
                         ? 'text-amber-300'
-                        : 'text-pink-400 font-extrabold'
-                      : 'text-zinc-200'
+                        : 'text-pink-300 font-extrabold'
+                      : 'text-slate-200'
                   }`}
                 >
                   {artist.name}
                 </p>
                 <span className="text-[9px] text-zinc-400 font-mono">
-                  [tecla {artistKeyNum}] • {count} fxs
+                  [{artistKeyNum}] • {count} fxs
                 </span>
               </div>
             </motion.button>

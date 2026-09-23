@@ -111,6 +111,8 @@ export type KioskSection = 'top' | 'categories' | 'artists' | 'tracks' | 'top15'
 export interface MpStatus {
   configured: boolean;
   connected: boolean;
+  isOAuth?: boolean;
+  mode?: string;
   collectorId: string | null;
   expiresAt: number | null;
   splitPercent: number;
@@ -151,3 +153,47 @@ export interface JukeboxUser {
   createdAt: number;
 }
 
+
+export interface DeductResult {
+  success: boolean;
+  remaining: number;
+  expired: boolean;
+}
+
+export interface PixPaidPayload {
+  tx_id: string;
+  credits: number;
+  amount: number;
+  payment_id: string;
+  userCode?: string;
+  user?: JukeboxUser | null;
+}
+
+export interface Advertisement {
+  id: number | string;
+  titulo: string;
+  descricao?: string;
+  tipo_midia?: string;
+  tipo?: 'imagem' | 'gif' | 'video' | 'html';
+  url_midia?: string | null;
+  conteudo_html?: string | null;
+  html_conteudo?: string | null;
+  posicao?: string;
+  localizacao_slot: 'catalog_banner' | 'now_playing_card' | 'idle_screensaver' | 'top_bar' | string;
+  duracao_segundos?: number;
+  tempo_exibicao_segundos?: number;
+  ordem?: number;
+  prioridade?: number;
+  status?: string;
+  categoria?: string;
+  genero?: string;
+  programa_slug?: string;
+  cidade?: string;
+  estado?: string;
+  bairro?: string;
+}
+
+export interface ScreensaverConfig {
+  tempo_inatividade_minutos?: number;
+  estilo?: string;
+}

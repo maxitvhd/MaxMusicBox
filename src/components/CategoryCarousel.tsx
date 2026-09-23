@@ -28,53 +28,32 @@ export const CategoryCarousel = () => {
     : categories;
 
   return (
-    <div className="w-full relative select-none">
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="flex items-center gap-2">
-          <h3
-            className={`font-bold text-sm tracking-wider uppercase ${
-              isVintage ? 'font-tech text-amber-300' : 'text-slate-200'
-            }`}
-          >
-            Categorias Musicais
-          </h3>
-          {autoDjConfig.categoryLocked && (
-            <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-700">
-              <Lock className="w-2.5 h-2.5" />
-              CATEGORIA TRAVADA PELO ADMIN
-            </span>
-          )}
-        </div>
+    <div className="w-full relative select-none group">
+      {/* Scroll Buttons overlay */}
+      <button
+        onClick={() => scroll('left')}
+        className={`absolute left-0 top-1/2 -translate-y-1/2 z-30 p-1 rounded-r-lg border-y border-r transition-all active:scale-95 bg-black/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 ${
+          isVintage ? 'border-amber-600/60 text-amber-300' : 'border-cyan-600/60 text-cyan-300'
+        }`}
+        title="Rolar para esquerda"
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
 
-        {/* Scroll Buttons */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => scroll('left')}
-            className={`p-1.5 rounded-lg border transition-all active:scale-95 ${
-              isVintage
-                ? 'vintage-neumorphic-btn text-amber-400'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
-            }`}
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => scroll('right')}
-            className={`p-1.5 rounded-lg border transition-all active:scale-95 ${
-              isVintage
-                ? 'vintage-neumorphic-btn text-amber-400'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
-            }`}
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <button
+        onClick={() => scroll('right')}
+        className={`absolute right-0 top-1/2 -translate-y-1/2 z-30 p-1 rounded-l-lg border-y border-l transition-all active:scale-95 bg-black/80 backdrop-blur-sm opacity-0 group-hover:opacity-100 ${
+          isVintage ? 'border-amber-600/60 text-amber-300' : 'border-cyan-600/60 text-cyan-300'
+        }`}
+        title="Rolar para direita"
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
 
       {/* Carousel list */}
       <div
         ref={scrollRef}
-        className="flex items-center gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-3 px-1 no-scrollbar"
+        className="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory scroll-smooth py-0.5 px-1 no-scrollbar"
         style={{ scrollbarWidth: 'none' }}
       >
         {visibleCategories.map((category, index) => {
@@ -90,19 +69,19 @@ export const CategoryCarousel = () => {
                   ? setSelectedCategory(null)
                   : openBrowser(category.id)
               }
-              className={`snap-start relative shrink-0 w-44 sm:w-52 h-24 sm:h-28 rounded-2xl overflow-hidden text-left p-3 flex flex-col justify-end transition-all duration-200 active:scale-95 group cursor-pointer border ${
+              className={`snap-start relative shrink-0 w-32 sm:w-36 h-12 sm:h-14 rounded-xl overflow-hidden text-left p-2 flex flex-col justify-end transition-all duration-200 active:scale-95 group/card cursor-pointer border ${
                 isSelected
                   ? isVintage
-                    ? 'ring-2 ring-amber-500 border-amber-400 shadow-xl'
+                    ? 'ring-2 ring-amber-500 border-amber-400 shadow-lg'
                     : 'neon-border-cyan neon-glow-cyan'
                   : isVintage
-                  ? 'border-[#373c46] hover:border-amber-600/70 shadow-md'
-                  : 'border-cyan-950/80 hover:border-cyan-500/60 shadow-lg'
+                  ? 'border-[#373c46] hover:border-amber-600/70 shadow-sm'
+                  : 'border-cyan-950/80 hover:border-cyan-500/60 shadow-sm'
               }`}
             >
               {/* Discreet Keypad Number Tag on top */}
               <div
-                className={`absolute top-2 left-2 z-20 px-2 py-0.5 rounded font-mono font-extrabold text-[11px] tracking-wider border shadow-md ${
+                className={`absolute top-1 left-1 z-20 px-1.5 py-0.2 rounded font-mono font-extrabold text-[9px] tracking-wider border shadow-sm ${
                   isSelected
                     ? isVintage
                       ? 'bg-amber-500 text-black border-amber-400'

@@ -1,7 +1,7 @@
 import confetti from 'canvas-confetti';
 import { tauriBridge } from './tauriBridge';
 import { useJukeboxStore } from '../store/useJukeboxStore';
-import { NativeSettings, MpStatus, PixCharge } from '../types';
+import { NativeSettings, MpStatus, PixCharge, Advertisement, ScreensaverConfig } from '../types';
 
 let started = false;
 
@@ -24,6 +24,21 @@ export async function bootstrapNative(): Promise<void> {
   );
   if (settings) {
     store.applyNativeSettings(settings);
+  }
+
+  // 1b. Carrega anúncios e screensaver em cache da nuvem Máximo
+  if (tauriBridge.isNative) {
+    tauriBridge.invoke<Advertisement[]>('get_cached_ads').then((cachedAds) => {
+      if (Array.isArray(cachedAds) && cachedAds.length > 0) {
+        store.setAds(cachedAds);
+        tauriBridge.log(`bootstrap: cached_ads=${cachedAds.length}`);
+      }
+    });
+    tauriBridge.invoke<ScreensaverConfig>('get_cached_screensaver').then((cfg) => {
+      if (cfg && typeof cfg === 'object') {
+        store.setScreensaverConfig(cfg);
+      }
+    });
   }
 
   // 2. Repassa as preferências atuais do frontend para o backend nativo
@@ -53,16 +68,10 @@ export async function bootstrapNative(): Promise<void> {
   }
 
   // 5. Assinatura dos eventos IPC
-  let levelTicks = 0;
   tauriBridge.listen<{ left: number; right: number; peakLeft: number; peakRight: number }>(
     'audio_levels',
     (e) => {
       useJukeboxStore.getState().setAudioLevels(e.payload);
-      if (++levelTicks % 120 === 0) {
-        tauriBridge.log(
-          `levels front l=${e.payload?.left?.toFixed?.(3)} r=${e.payload?.right?.toFixed?.(3)}`
-        );
-      }
     }
   );
   tauriBridge.listen<number[]>('audio_spectrum', (e) => {
@@ -74,7 +83,7 @@ export async function bootstrapNative(): Promise<void> {
     (e) => useJukeboxStore.getState().setProgressSeconds((e.payload?.position_ms || 0) / 1000)
   );
   tauriBridge.listen('track_ended', () => useJukeboxStore.getState().handleTrackEnded());
-  tauriBridge.listen<{ credits: number; amount: number; tx_id: string }>('pix_pago', (e) => {
+  tauriBridge.listen<{ credits: number; amount: number; tx_id: string; payment_id?: string; userCode?: string; user?: any }>('pix_pago', (e) => {
     confetti({
       particleCount: 90,
       spread: 75,
@@ -98,6 +107,7 @@ export async function bootstrapNative(): Promise<void> {
     useJukeboxStore.getState().setMpError(`Pix ${e.payload?.status || 'recusado'}`)
   );
   tauriBridge.listen<MpStatus>('mp_connected', (e) => useJukeboxStore.getState().setMpStatus(e.payload));
+  tauriBridge.listen<MpStatus>('mp_disconnected', (e) => useJukeboxStore.getState().setMpStatus(e.payload));
   tauriBridge.listen<string>('mp_error', (e) => {
     const msg = typeof e.payload === 'string' ? e.payload : 'Erro na integração Mercado Pago';
     useJukeboxStore.getState().setMpError(msg);
@@ -111,6 +121,19 @@ export async function bootstrapNative(): Promise<void> {
       'info',
       3000
     );
+  });
+
+  // 5b. Publicidade e Anúncios da Nuvem Máximo
+  tauriBridge.listen<Advertisement[]>('ads_updated', (e) => {
+    if (Array.isArray(e.payload)) {
+      useJukeboxStore.getState().setAds(e.payload);
+      tauriBridge.log(`ads_updated: ${e.payload.length} anuncio(s) recebido(s) da nuvem`);
+    }
+  });
+  tauriBridge.listen<ScreensaverConfig>('screensaver_updated', (e) => {
+    if (e.payload && typeof e.payload === 'object') {
+      useJukeboxStore.getState().setScreensaverConfig(e.payload);
+    }
   });
 
   // 6. Relatório financeiro atual (SQLite)

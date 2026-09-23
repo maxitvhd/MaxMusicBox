@@ -15,6 +15,8 @@ import { SecondaryScreenModal } from './components/SecondaryScreenModal';
 import { AccessibilityKeypadModal } from './components/AccessibilityKeypadModal';
 import { MusicBrowserModal } from './components/MusicBrowserModal';
 import { KioskKeyboardHud } from './components/KioskKeyboardHud';
+import { AdBanner } from './components/AdBanner';
+import { Screensaver } from './components/Screensaver';
 import { useKioskKeyboardListener } from './hooks/useKioskKeyboardListener';
 import { audioEngine } from './services/audioEngine';
 import { tauriBridge } from './services/tauriBridge';
@@ -88,13 +90,13 @@ export default function App() {
           <div className="hidden 2xl:block w-5 shrink-0 wood-panel-left border-r border-[#201006]" />
         )}
 
-        <main className="flex-1 min-h-0 w-full p-2 sm:p-3 flex flex-col gap-2.5 overflow-hidden">
-          {/* TOP SECTION: Now Playing (with Stereo VU) & Queue List */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 shrink-0">
-            <div className="lg:col-span-2">
+        <main className="flex-1 min-h-0 w-full p-2 sm:p-3 flex flex-col gap-2 overflow-y-auto lg:overflow-hidden">
+          {/* TOP SECTION: Now Playing (6-cols) & Queue List (6-cols em 2 blocos) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 shrink-0">
+            <div className="lg:col-span-6 xl:col-span-6 h-[174px] sm:h-[180px] flex flex-col">
               <NowPlaying />
             </div>
-            <div className="lg:col-span-1 h-full min-h-[170px] max-h-[220px]">
+            <div className="lg:col-span-6 xl:col-span-6 h-[174px] sm:h-[180px] flex flex-col overflow-hidden">
               <QueueList />
             </div>
           </div>
@@ -161,7 +163,7 @@ export default function App() {
           </div>
 
           {/* BOTTOM SECTION: Split view of Track Catalog & Top 15 Jukebox Hits */}
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-2.5 overflow-hidden">
+          <div className="flex-1 min-h-[260px] grid grid-cols-1 lg:grid-cols-12 gap-2.5 overflow-hidden">
             {/* Track Catalog (7 cols on large screens) */}
             <div className="lg:col-span-7 h-full min-h-0 overflow-hidden flex flex-col">
               <TrackList />
@@ -183,13 +185,14 @@ export default function App() {
       {/* Kiosk Bottom Footer - Fixed */}
       <Footer />
 
-      {/* Modals */}
+      {/* Modals & Screensaver */}
       <PixModal />
       <UserLoginModal />
       <AdminRackModal />
       <SecondaryScreenModal />
       <AccessibilityKeypadModal />
       <MusicBrowserModal />
+      <Screensaver />
     </div>
   );
 }

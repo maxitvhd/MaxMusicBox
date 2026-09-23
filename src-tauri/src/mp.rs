@@ -70,6 +70,8 @@ pub fn config_from_env() -> Option<MpConfig> {
 pub struct MpStatus {
     pub configured: bool,
     pub connected: bool,
+    pub is_oauth: bool,
+    pub mode: String,
     pub collector_id: Option<String>,
     pub expires_at: Option<i64>,
     pub split_percent: f64,
@@ -126,31 +128,53 @@ pub fn status(secrets: &Secrets) -> MpStatus {
     let oauth_token = secrets
         .mp_access_token
         .as_ref()
-        .map(|t| !t.is_empty())
+        .map(|t| !t.trim().is_empty())
         .unwrap_or(false);
     let env_token = cfg
         .as_ref()
         .and_then(|c| c.access_token.as_ref())
-        .map(|t| !t.is_empty())
+        .map(|t| !t.trim().is_empty())
         .unwrap_or(false);
-    let split = cfg
-        .as_ref()
-        .filter(|c| c.is_marketplace())
-        .map(|c| c.split_percent)
-        .unwrap_or(0.0);
+
+    let is_oauth = oauth_token;
+    let connected = oauth_token || env_token;
+
+    let (mode, split) = if oauth_token {
+        let sp = cfg
+            .as_ref()
+            .map(|c| c.split_percent)
+            .unwrap_or(5.0);
+        ("oauth_split".to_string(), sp)
+    } else if env_token {
+        ("program_direct".to_string(), 0.0)
+    } else {
+        ("disconnected".to_string(), 0.0)
+    };
+
     MpStatus {
         configured: cfg.is_some(),
-        connected: oauth_token || env_token,
-        collector_id: secrets.mp_user_id.clone().filter(|v| !v.is_empty()),
-        expires_at: secrets.mp_expires_at,
+        connected,
+        is_oauth,
+        mode,
+        collector_id: if oauth_token {
+            secrets.mp_user_id.clone().filter(|v| !v.is_empty())
+        } else if env_token {
+            Some("Conta Nativa do Programa (Sem Split)".to_string())
+        } else {
+            None
+        },
+        expires_at: if oauth_token { secrets.mp_expires_at } else { None },
         split_percent: split,
     }
 }
 
 pub fn disconnect(path: &PathBuf) -> Result<(), String> {
+    let empty = Secrets::default();
+    let _ = save_secrets(path, &empty);
     if path.exists() {
-        std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(path);
     }
+    eprintln!("[mp] secrets.json removido e desvinculado com sucesso.");
     Ok(())
 }
 
@@ -502,22 +526,29 @@ fn refresh(secrets_path: &PathBuf, cfg: &MpConfig) -> Result<String, String> {
     Ok(saved.mp_access_token.unwrap_or(token.access_token))
 }
 
-fn ensure_token(secrets_path: &PathBuf, cfg: &MpConfig) -> Result<String, String> {
+/// Retorna (token, is_oauth)
+fn ensure_token(secrets_path: &PathBuf, cfg: &MpConfig) -> Result<(String, bool), String> {
+    // 1. Tenta primeiro OAuth conectado pelo cliente/operador da máquina
+    let secrets = load_secrets(secrets_path);
+    let oauth_token = secrets.mp_access_token.clone().unwrap_or_default();
+    if !oauth_token.trim().is_empty() {
+        let expires_at = secrets.mp_expires_at.unwrap_or(0);
+        if expires_at > 0 && now_ms() > expires_at {
+            let refreshed = refresh(secrets_path, cfg)?;
+            return Ok((refreshed, true));
+        }
+        return Ok((oauth_token, true));
+    }
+
+    // 2. Se o cliente não conectou a conta do MP, usa o token nativo do próprio programa (sem split)
     if let Some(t) = &cfg.access_token {
-        if !t.trim().is_empty() {
-            return Ok(t.clone());
+        let trimmed = t.trim();
+        if !trimmed.is_empty() {
+            return Ok((trimmed.to_string(), false));
         }
     }
-    let secrets = load_secrets(secrets_path);
-    let token = secrets.mp_access_token.clone().unwrap_or_default();
-    if token.is_empty() {
-        return Err("Conta Mercado Pago não conectada.".to_string());
-    }
-    let expires_at = secrets.mp_expires_at.unwrap_or(0);
-    if expires_at > 0 && now_ms() > expires_at {
-        return refresh(secrets_path, cfg);
-    }
-    Ok(token)
+
+    Err("Nenhuma conta Mercado Pago configurada (nem conta conectada via OAuth nem token nativo do programa no .env).".to_string())
 }
 
 /// Mostra apenas o início/fim do token — nunca o valor completo nos logs.
@@ -572,9 +603,16 @@ pub fn create_charge(
     if amount <= 0.0 {
         return Err("Valor inválido".to_string());
     }
-    let cfg = config_from_env().ok_or("Mercado Pago não configurado (defina MP_CLIENT_ID / MP_CLIENT_SECRET).")?;
+    let credits = if credits > 0 {
+        credits
+    } else if let Ok(conn) = db.lock() {
+        crate::library::calculate_credits_for_amount(&conn, amount).max(1)
+    } else {
+        1
+    };
+    let cfg = config_from_env().ok_or("Mercado Pago não configurado (defina MP_CLIENT_ID / MP_CLIENT_SECRET ou MP_ACCESS_TOKEN).")?;
 
-    let token = ensure_token(&secrets_path, &cfg)?;
+    let (token, is_oauth) = ensure_token(&secrets_path, &cfg)?;
 
     let tx_id = format!("mmb-{}", now_ms());
 
@@ -586,8 +624,9 @@ pub fn create_charge(
         "metadata": { "credits": credits, "tx_id": tx_id }
     });
 
-    // application_fee só existe em apps marketplace; com Access Token fixo, omite.
-    let fee = if cfg.is_marketplace() {
+    // application_fee (split) SOMENTE quando conectado via OAuth do operador!
+    // Quando usando a conta do programa (sem OAuth), não usa split (100% vai para o programa).
+    let fee = if is_oauth {
         let fee = ((amount * cfg.split_percent / 100.0) * 100.0).round() / 100.0;
         if let Some(obj) = body.as_object_mut() {
             obj.insert("application_fee".to_string(), json!(fee));
@@ -598,8 +637,8 @@ pub fn create_charge(
     };
 
     eprintln!(
-        "[mp] create_charge marketplace={} split={:?} token={} body={body}",
-        cfg.is_marketplace(),
+        "[mp] create_charge is_oauth={} split={:?} token={}",
+        is_oauth,
         fee,
         mask_token(&token)
     );
@@ -608,7 +647,7 @@ pub fn create_charge(
     let value = match send_payment(&token, &tx_id, &body) {
         Ok(v) => v,
         Err((code, text)) => {
-            eprintln!("[mp] create_charge HTTP {code}: {text}");
+            eprintln!("[mp] create_charge HTTP {code}");
             let lower = text.to_ascii_lowercase();
             if lower.contains("2059") || lower.contains("application_fee") {
                 eprintln!(
@@ -645,7 +684,7 @@ pub fn create_charge(
         .to_string();
 
     if payment_id.is_empty() {
-        eprintln!("[mp] resposta sem id de pagamento: {value}");
+        eprintln!("[mp] resposta da API do Mercado Pago sem id de pagamento válido.");
         return Err("Resposta sem id de pagamento".to_string());
     }
     eprintln!("[mp] pix criado payment_id={payment_id} valor={amount} créditos={credits}");
@@ -713,7 +752,7 @@ fn poll_payment(
 
         let token = match config_from_env() {
             Some(cfg) => match ensure_token(&secrets_path, &cfg) {
-                Ok(t) => t,
+                Ok((t, _)) => t,
                 Err(_) => continue,
             },
             None => return,
@@ -752,19 +791,39 @@ fn poll_payment(
         match status.as_str() {
             "approved" => {
                 let tx_id = format!("tx-{payment_id}");
+                let digits: String = payment_id.chars().filter(|c| c.is_ascii_digit()).collect();
+                let user_pin = if digits.len() >= 5 {
+                    digits[digits.len() - 5..].to_string()
+                } else {
+                    format!("{:05}", (now_ms() % 100000))
+                };
+
+                let mut temp_user: Option<crate::library::User> = None;
+
                 if let Ok(conn) = db.lock() {
                     let _ = conn.execute(
                         "UPDATE pix_charges SET status='approved' WHERE id=?1",
                         params![payment_id],
                     );
                     let _ = crate::library::insert_finance(&conn, &tx_id, amount, credits, "pix");
+
+                    if let Ok(u) = crate::library::create_or_topup_temp_user(&conn, &user_pin, credits) {
+                        temp_user = Some(u);
+                    }
                 }
                 audio.send(AudioCmd::Sfx {
                     path: sound.to_string_lossy().to_string(),
                 });
                 let _ = app.emit(
                     "pix_pago",
-                    json!({ "tx_id": tx_id, "credits": credits, "amount": amount, "payment_id": payment_id }),
+                    json!({ 
+                        "tx_id": tx_id, 
+                        "credits": credits, 
+                        "amount": amount, 
+                        "payment_id": payment_id,
+                        "userCode": user_pin,
+                        "user": temp_user
+                    }),
                 );
                 return;
             }

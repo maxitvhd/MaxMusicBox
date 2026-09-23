@@ -124,6 +124,14 @@ pub struct User {
     pub created_at: i64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DeductResult {
+    pub success: bool,
+    pub remaining: i64,
+    pub expired: bool,
+}
+
 pub fn open_db(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -398,14 +406,74 @@ pub fn delete_user(conn: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn deduct_user_credit(conn: &Connection, id: &str, credits: i64) -> Result<bool, String> {
+/// Calcula a quantidade de créditos com base no valor em R$ e preço unitário configurado
+pub fn calculate_credits_for_amount(conn: &Connection, amount: f64) -> i64 {
+    let price_per_credit: f64 = get_setting(conn, "price_per_credit")
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|&v| v > 0.0)
+        .unwrap_or(2.50);
+
+    if price_per_credit <= 0.0 {
+        return 0;
+    }
+    (amount / price_per_credit).floor() as i64
+}
+
+/// Cria ou recarrega um usuário temporário baseado no código PIN de 5 dígitos
+pub fn create_or_topup_temp_user(conn: &Connection, pin: &str, credits: i64) -> Result<User, String> {
+    let pin = pin.trim();
+    let temp_id = format!("temp-{}", pin);
+    let temp_name = format!("Cliente #{}", pin);
+
+    if let Some(_existing) = get_user(conn, &temp_id)? {
+        return add_user_credits(conn, &temp_id, credits);
+    }
+
+    let hash = hash_password(pin, &random_salt());
+    conn.execute(
+        "INSERT INTO users (id, name, password_hash, credits, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![temp_id, temp_name, hash, credits.max(0), now_ms()],
+    )
+    .map_err(|e| e.to_string())?;
+
+    get_user(conn, &temp_id)?.ok_or("Falha ao criar o usuário temporário".to_string())
+}
+
+pub fn deduct_user_credit(conn: &Connection, id: &str, credits: i64) -> Result<DeductResult, String> {
     let affected = conn
         .execute(
             "UPDATE users SET credits = credits - ?1 WHERE id = ?2 AND credits >= ?1",
             params![credits, id],
         )
         .map_err(|e| e.to_string())?;
-    Ok(affected > 0)
+
+    if affected == 0 {
+        return Ok(DeductResult {
+            success: false,
+            remaining: 0,
+            expired: false,
+        });
+    }
+
+    let remaining: i64 = conn
+        .query_row("SELECT credits FROM users WHERE id = ?1", params![id], |r| r.get(0))
+        .unwrap_or(0);
+
+    // Se for usuário temporário (prefixo temp-) e o saldo zerou, exclui automaticamente do SQLite
+    if id.starts_with("temp-") && remaining <= 0 {
+        let _ = conn.execute("DELETE FROM users WHERE id = ?1", params![id]);
+        return Ok(DeductResult {
+            success: true,
+            remaining: 0,
+            expired: true,
+        });
+    }
+
+    Ok(DeductResult {
+        success: true,
+        remaining,
+        expired: false,
+    })
 }
 
 pub fn add_user_credits(conn: &Connection, id: &str, credits: i64) -> Result<User, String> {

@@ -14,7 +14,10 @@ import {
   MpStatus,
   PixCharge,
   NativeSettings,
-  JukeboxUser
+  JukeboxUser,
+  DeductResult,
+  Advertisement,
+  ScreensaverConfig
 } from '../types';
 import { INITIAL_CATEGORIES, INITIAL_ARTISTS, INITIAL_TRACKS } from '../data/musicCatalog';
 import { audioEngine } from '../services/audioEngine';
@@ -70,8 +73,13 @@ interface JukeboxState {
 
   // Tela dedicada de músicas (overlay full-screen)
   browserOpen: boolean;
-  openBrowser: (categoryId?: string | null, artistId?: string | null) => void;
+  browserMode: 'category' | 'artist' | 'tracks' | 'top15';
+  openBrowser: (modeOrCat?: 'category' | 'artist' | 'tracks' | 'top15' | string | null, artistId?: string | null) => void;
   closeBrowser: () => void;
+
+  // Admin PIN
+  adminPin: string;
+  setAdminPin: (pin: string) => void;
 
   // User Pending Playlist (Credit Builder)
   userPlaylist: Track[];
@@ -130,6 +138,7 @@ interface JukeboxState {
   setCategoryLocked: (locked: boolean, categoryId?: string) => void;
   setWeeklySchedule: (dayOfWeek: number, categoryId: string) => void;
   setDateOverride: (dateString: string, categoryId: string) => void;
+  removeDateOverride: (key: string) => void;
   triggerAutoDjNext: () => void;
 
   // Live audio telemetry (Rust DSP nativo ou motor WebAudio no navegador)
@@ -153,7 +162,14 @@ interface JukeboxState {
   setMpError: (error: string | null) => void;
   setActiveCharge: (charge: PixCharge | null) => void;
   refreshMpStatus: () => Promise<void>;
-  handlePixPaid: (payload: { credits: number; amount: number; tx_id: string }) => void;
+  handlePixPaid: (payload: {
+    credits: number;
+    amount: number;
+    tx_id: string;
+    payment_id?: string;
+    userCode?: string;
+    user?: JukeboxUser | null;
+  }) => void;
 
   setPricePerCredit: (price: number) => void;
 
@@ -170,6 +186,8 @@ interface JukeboxState {
   // User Accounts (nativo: senha única libera o saldo da conta)
   users: JukeboxUser[];
   currentUser: JukeboxUser | null;
+  lastPurchasedPin: string | null;
+  setLastPurchasedPin: (pin: string | null) => void;
   isUserLoginOpen: boolean;
   setUserLoginOpen: (open: boolean) => void;
   listUsers: () => Promise<void>;
@@ -179,6 +197,12 @@ interface JukeboxState {
   authenticateUser: (password: string) => Promise<{ ok: boolean; error?: string }>;
   logoutUser: () => void;
   addUserCredits: (id: string, credits: number) => Promise<void>;
+
+  // Publicidade & Anúncios da Nuvem Máximo
+  ads: Advertisement[];
+  setAds: (ads: Advertisement[]) => void;
+  screensaverConfig: ScreensaverConfig;
+  setScreensaverConfig: (cfg: ScreensaverConfig) => void;
 }
 
 export const useJukeboxStore = create<JukeboxState>()(
@@ -204,6 +228,11 @@ export const useJukeboxStore = create<JukeboxState>()(
       setMpStatus: (status) => set({ mpStatus: status, mpError: null }),
       setMpError: (error) => set({ mpError: error }),
       setActiveCharge: (charge) => set({ activeCharge: charge }),
+
+      ads: [],
+      setAds: (ads) => set({ ads }),
+      screensaverConfig: { tempo_inatividade_minutos: 3, estilo: 'winamp_media_visualizer' },
+      setScreensaverConfig: (screensaverConfig) => set({ screensaverConfig }),
       refreshMpStatus: async () => {
         const status = await tauriBridge.invoke<MpStatus>('mp_oauth_status');
         if (status) set({ mpStatus: status });
@@ -218,6 +247,7 @@ export const useJukeboxStore = create<JukeboxState>()(
         if (settings.theme) next.theme = settings.theme;
         if (settings.autoDjConfig) next.autoDjConfig = { ...state.autoDjConfig, ...settings.autoDjConfig };
         if (settings.mp) next.mpStatus = settings.mp;
+        if (settings.adminPin) next.adminPin = settings.adminPin;
         if (typeof settings.pricePerCredit === 'number') {
           next.financialReport = { ...state.financialReport, pricePerCredit: settings.pricePerCredit };
         }
@@ -231,10 +261,10 @@ export const useJukeboxStore = create<JukeboxState>()(
           state.triggerAutoDjNext();
         }
       },
-      handlePixPaid: ({ credits, amount, tx_id }) => {
+      handlePixPaid: ({ credits, amount, tx_id, userCode, user }) => {
         const state = get();
         if (state.financialReport.history.some((h) => h.id === tx_id)) {
-          set({ isPixModalOpen: false, activeCharge: null, mpError: null });
+          set({ activeCharge: null, mpError: null });
           return;
         }
         const newTransaction = {
@@ -245,11 +275,15 @@ export const useJukeboxStore = create<JukeboxState>()(
           paymentMethod: 'pix' as const
         };
         const report = state.financialReport;
+        const pin = userCode || (user ? user.id.replace('temp-', '') : null);
+        const activeUser = user || (pin ? { id: `temp-${pin}`, name: `Cliente #${pin}`, credits, createdAt: Date.now() } : state.currentUser);
+
         set({
           credits: state.credits + credits,
-          isPixModalOpen: false,
           activeCharge: null,
           mpError: null,
+          lastPurchasedPin: pin,
+          currentUser: activeUser,
           financialReport: {
             ...report,
             totalCreditsInserted: report.totalCreditsInserted + credits,
@@ -260,12 +294,23 @@ export const useJukeboxStore = create<JukeboxState>()(
             history: [newTransaction, ...report.history]
           }
         });
-        state.showKioskHud(
-          '✓ Pagamento Pix confirmado!',
-          `+${credits} crédito(s) liberado(s)`,
-          'success',
-          4000
-        );
+
+        if (pin) {
+          state.showKioskHud(
+            `✓ Pix Confirmado! Código: ${pin}`,
+            `+${credits} crédito(s) liberado(s) | Digite 0000 + ENTER para sair`,
+            'success',
+            8000
+          );
+        } else {
+          state.showKioskHud(
+            '✓ Pagamento Pix confirmado!',
+            `+${credits} crédito(s) liberado(s)`,
+            'success',
+            4000
+          );
+        }
+
         if (get().userPlaylist.length > 0) {
           setTimeout(() => get().commitUserPlaylist(), 400);
         }
@@ -353,16 +398,37 @@ export const useJukeboxStore = create<JukeboxState>()(
 
       // Tela dedicada
       browserOpen: false,
-      openBrowser: (categoryId = null, artistId = null) => {
+      browserMode: 'tracks',
+      openBrowser: (modeOrCat = null, artistId = null) => {
         const state = get();
-        const category = categoryId
-          ? state.categories.find((c) => c.id === categoryId) ?? null
-          : state.selectedCategory;
-        const artist = artistId
-          ? state.artists.find((a) => a.id === artistId) ?? null
-          : state.selectedArtist;
+        let mode: 'category' | 'artist' | 'tracks' | 'top15' = 'tracks';
+        let category = null;
+        let artist = null;
+
+        if (modeOrCat === 'top15') {
+          mode = 'top15';
+        } else if (modeOrCat === 'tracks') {
+          mode = 'tracks';
+        } else if (artistId) {
+          mode = 'artist';
+          artist = state.artists.find((a) => a.id === artistId) ?? state.selectedArtist;
+          if (modeOrCat && modeOrCat !== 'artist') {
+            category = state.categories.find((c) => c.id === modeOrCat) ?? null;
+          }
+        } else if (modeOrCat === 'category') {
+          mode = 'category';
+          category = state.selectedCategory;
+        } else if (modeOrCat) {
+          const foundCat = state.categories.find((c) => c.id === modeOrCat);
+          if (foundCat) {
+            category = foundCat;
+            mode = 'category';
+          }
+        }
+
         set({
           browserOpen: true,
+          browserMode: mode,
           selectedCategory: category,
           selectedArtist: artist,
           trackPage: 0,
@@ -370,6 +436,10 @@ export const useJukeboxStore = create<JukeboxState>()(
         });
       },
       closeBrowser: () => set({ browserOpen: false, activeSection: 'categories' }),
+
+      // Admin PIN
+      adminPin: '1234',
+      setAdminPin: (pin) => set({ adminPin: pin }),
 
       // User Pending Playlist
       userPlaylist: [],
@@ -427,11 +497,26 @@ export const useJukeboxStore = create<JukeboxState>()(
 
         // Deduct total credits once (da conta do usuário logado ou do terminal)
         if (state.currentUser) {
-          const creds = state.currentUser.credits - totalCost;
+          const currentUserId = state.currentUser.id;
+          const creds = Math.max(0, state.currentUser.credits - totalCost);
           set({ currentUser: { ...state.currentUser, credits: creds } });
-          tauriBridge.invoke('deduct_user_credit', {
-            id: state.currentUser.id,
+          tauriBridge.invoke<DeductResult>('deduct_user_credit', {
+            id: currentUserId,
             credits: totalCost
+          }).then((res) => {
+            if (res?.expired) {
+              set((s) => ({
+                currentUser: null,
+                lastPurchasedPin: null,
+                users: s.users.filter((u) => u.id !== currentUserId)
+              }));
+              get().showKioskHud('Créditos esgotados!', 'Sessão temporária finalizada.', 'warning', 4000);
+            } else if (res && typeof res.remaining === 'number') {
+              set((s) => ({
+                currentUser: s.currentUser?.id === currentUserId ? ({ ...s.currentUser, credits: res.remaining }) : s.currentUser,
+                credits: res.remaining
+              }));
+            }
           });
         } else {
           set({ credits: state.credits - totalCost });
@@ -572,6 +657,20 @@ export const useJukeboxStore = create<JukeboxState>()(
 
       addToQueue: (track, requestedBy = 'Cliente (Touch)') => {
         const state = get();
+
+        // Trava de Categoria Ativa: impede tocar de outras categorias
+        if (state.autoDjConfig.categoryLocked && state.autoDjConfig.lockedCategoryId) {
+          if (track.category !== state.autoDjConfig.lockedCategoryId) {
+            state.showKioskHud(
+              'Categoria Bloqueada',
+              'O aparelho está travado para reproduzir somente a categoria selecionada.',
+              'warning',
+              3500
+            );
+            return false;
+          }
+        }
+
         // Check if user has credits or if requested by Auto-DJ
         if (requestedBy.startsWith('Cliente')) {
           const cost = track.cost;
@@ -581,11 +680,26 @@ export const useJukeboxStore = create<JukeboxState>()(
             return false;
           }
           if (state.currentUser) {
-            const creds = state.currentUser.credits - cost;
+            const currentUserId = state.currentUser.id;
+            const creds = Math.max(0, state.currentUser.credits - cost);
             set({ currentUser: { ...state.currentUser, credits: creds } });
-            tauriBridge.invoke('deduct_user_credit', {
-              id: state.currentUser.id,
+            tauriBridge.invoke<DeductResult>('deduct_user_credit', {
+              id: currentUserId,
               credits: cost
+            }).then((res) => {
+              if (res?.expired) {
+                set((s) => ({
+                  currentUser: null,
+                  lastPurchasedPin: null,
+                  users: s.users.filter((u) => u.id !== currentUserId)
+                }));
+                get().showKioskHud('Créditos esgotados!', 'Sessão temporária finalizada.', 'warning', 4000);
+              } else if (res && typeof res.remaining === 'number') {
+                set((s) => ({
+                  currentUser: s.currentUser?.id === currentUserId ? ({ ...s.currentUser, credits: res.remaining }) : s.currentUser,
+                  credits: res.remaining
+                }));
+              }
             });
           } else {
             set({ credits: state.credits - cost });
@@ -881,6 +995,19 @@ export const useJukeboxStore = create<JukeboxState>()(
         tauriBridge.invoke('set_autodj_config', { config: get().autoDjConfig });
       },
 
+      removeDateOverride: (key) => {
+        const state = get();
+        const updated = { ...state.autoDjConfig.dateOverrides };
+        delete updated[key];
+        set({
+          autoDjConfig: {
+            ...state.autoDjConfig,
+            dateOverrides: updated
+          }
+        });
+        tauriBridge.invoke('set_autodj_config', { config: get().autoDjConfig });
+      },
+
       // 8. Lógica de Banco de Dados e Fila (SQLite no Rust / Auto-DJ)
       triggerAutoDjNext: async () => {
         const state = get();
@@ -906,14 +1033,20 @@ export const useJukeboxStore = create<JukeboxState>()(
 
         let targetCategory = 'rock';
 
-        const todayDate = new Date().toISOString().split('T')[0];
-        const dayOfWeek = new Date().getDay();
+        const now = new Date();
+        const todayDate = now.toISOString().split('T')[0];
+        const currentHour = now.getHours().toString().padStart(2, '0');
+        const hourKey = `${todayDate}@${currentHour}`;
+        const dayOfWeek = now.getDay();
 
         if (state.autoDjConfig.categoryLocked) {
           // Trava de categoria ativada
           targetCategory = state.autoDjConfig.lockedCategoryId || 'rock';
+        } else if (state.autoDjConfig.dateOverrides[hourKey]) {
+          // Agenda com horário específico (ex: 2026-10-12@14)
+          targetCategory = state.autoDjConfig.dateOverrides[hourKey];
         } else if (state.autoDjConfig.dateOverrides[todayDate]) {
-          // Data com evento especial
+          // Agenda do dia todo
           targetCategory = state.autoDjConfig.dateOverrides[todayDate];
         } else if (state.currentTrack) {
           // Mesma categoria da última música que tocou
@@ -933,8 +1066,13 @@ export const useJukeboxStore = create<JukeboxState>()(
           eligibleTracks = state.tracks.filter(t => t.category === targetCategory);
         }
         if (eligibleTracks.length === 0) {
+          if (state.autoDjConfig.categoryLocked) {
+            return; // se travado, não sai da categoria travada
+          }
           eligibleTracks = state.tracks;
         }
+
+        if (eligibleTracks.length === 0) return;
 
         const randomTrack = eligibleTracks[Math.floor(Math.random() * eligibleTracks.length)];
         state.playTrack(randomTrack, 'Auto-DJ');
@@ -1004,6 +1142,8 @@ export const useJukeboxStore = create<JukeboxState>()(
       // User Accounts (nativo)
       users: [],
       currentUser: null,
+      lastPurchasedPin: null,
+      setLastPurchasedPin: (pin) => set({ lastPurchasedPin: pin }),
       isUserLoginOpen: false,
       setUserLoginOpen: (open) => set({ isUserLoginOpen: open }),
       listUsers: async () => {
@@ -1054,7 +1194,10 @@ export const useJukeboxStore = create<JukeboxState>()(
         }
         return { ok: false, error: 'Senha não encontrada.' };
       },
-      logoutUser: () => set({ currentUser: null }),
+      logoutUser: () => {
+        set({ currentUser: null, lastPurchasedPin: null, credits: 0 });
+        get().showKioskHud('Sessão encerrada', 'Você saiu da conta (0000)', 'info', 3000);
+      },
       addUserCredits: async (id, credits) => {
         if (!tauriBridge.isNative) return;
         const user = await tauriBridge.invoke<JukeboxUser>('add_user_credits', { id, credits });

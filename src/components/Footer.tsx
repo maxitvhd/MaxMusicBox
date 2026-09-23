@@ -3,7 +3,9 @@ import { useJukeboxStore } from '../store/useJukeboxStore';
 
 export const Footer = () => {
   const theme = useJukeboxStore((s) => s.theme);
+  const currentUser = useJukeboxStore((s) => s.currentUser);
   const credits = useJukeboxStore((s) => s.credits);
+  const availableCredits = currentUser ? currentUser.credits : credits;
   const setPixModalOpen = useJukeboxStore((s) => s.setPixModalOpen);
   const setAdminModalOpen = useJukeboxStore((s) => s.setAdminModalOpen);
 
@@ -11,7 +13,7 @@ export const Footer = () => {
 
   return (
     <footer
-      className={`w-full px-6 py-3 border-t flex flex-wrap items-center justify-between gap-4 transition-colors duration-200 select-none ${
+      className={`w-full px-3 sm:px-6 py-2 sm:py-2.5 border-t flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-4 shrink-0 transition-colors duration-200 select-none ${
         isVintage
           ? 'bg-[#181a20] border-[#2e333e] text-amber-200'
           : 'bg-[#090e1a]/95 backdrop-blur-md border-cyan-900/40 text-slate-300'
@@ -33,33 +35,37 @@ export const Footer = () => {
         </button>
 
         <div className="hidden md:flex items-center gap-2 text-xs font-mono opacity-60">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span>Áudio DSP Ativo (60 FPS)</span>
-          <span>•</span>
-          <span>SQLite Local Sincronizado</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Sistema Operacional Ativo</span>
         </div>
       </div>
 
       {/* Center: External Numpad Shortcut Legend */}
-      <div className="hidden lg:flex items-center gap-2 text-[11px] font-mono select-none">
+      <div className="hidden lg:flex items-center gap-1.5 text-[10px] font-mono select-none flex-wrap">
         <span className="opacity-50 font-bold uppercase tracking-wider">Teclado Numérico:</span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
-          <strong className="text-amber-400">[/]</strong> Gênero
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
+          <strong className="text-amber-400">[/]</strong> Gêneros
         </span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
-          <strong className="text-amber-400">[*]</strong> Tocar Direto
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
+          <strong className="text-amber-400">[*]</strong> Tocar Músicas
         </span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
-          <strong className="text-amber-400">[,]</strong> Seção
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
+          <strong className="text-amber-400">[0]</strong> Play/Pause
         </span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
-          <strong className="text-amber-400">[4862]</strong> Navegar
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
+          <strong className="text-amber-400">[+] [-]</strong> Pág / Vol
         </span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
-          <strong className="text-amber-400">[+] [-]</strong> Vol / Pág
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">
+          <strong className="text-amber-400">[,]</strong> Seções
         </span>
-        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-emerald-300">
-          <strong className="text-emerald-400">[Enter]</strong> PIX / OK
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-emerald-300">
+          <strong className="text-emerald-400">[Enter]</strong> Pix / Tocar
+        </span>
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-amber-300">
+          <strong className="text-amber-400">[0000]</strong> Sair
+        </span>
+        <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-rose-300">
+          <strong className="text-rose-400">[9999]</strong> Admin
         </span>
       </div>
 
@@ -67,7 +73,7 @@ export const Footer = () => {
       <div className="flex items-center gap-3">
         <div className="text-right hidden sm:block">
           <div className="text-xs font-bold font-mono">
-            Saldo: <span className="text-emerald-400 font-extrabold">{credits} {credits === 1 ? 'música' : 'músicas'}</span>
+            Saldo: <span className="text-emerald-400 font-extrabold">{availableCredits} {availableCredits === 1 ? 'música' : 'músicas'}</span>
           </div>
           <div className="text-[10px] opacity-60 font-mono">1 Crédito = 1 Faixa</div>
         </div>

@@ -12,6 +12,7 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
   const currentTrack = useJukeboxStore((s) => s.currentTrack);
   const playTrack = useJukeboxStore((s) => s.playTrack);
   const addToQueue = useJukeboxStore((s) => s.addToQueue);
+  const openBrowser = useJukeboxStore((s) => s.openBrowser);
 
   const isVintage = theme === 'amp-vintage';
 
@@ -35,9 +36,13 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-2">
+        <div
+          onClick={() => openBrowser('top15')}
+          className="flex items-center gap-2 cursor-pointer group"
+          title="Clique para abrir a tela cheia de Sucessos"
+        >
           <div
-            className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110 ${
               isVintage
                 ? 'bg-amber-950/80 border border-amber-600/50 text-amber-400'
                 : 'bg-rose-950/80 border border-rose-500/50 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.3)]'
@@ -47,8 +52,8 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="font-extrabold text-xs sm:text-sm uppercase tracking-wider font-modern">
-                Top {limit} Sucessos da Jukebox
+              <h3 className="font-extrabold text-xs sm:text-sm uppercase tracking-wider font-modern group-hover:text-amber-400 transition-colors">
+                Top Sucessos Jukebox
               </h3>
               <span
                 className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${
@@ -61,14 +66,19 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
               </span>
             </div>
             <p className="text-[10px] opacity-60 font-mono">
-              Digite <span className="font-bold text-amber-400">*código</span> no teclado numérico
+              Digite <span className="font-bold text-amber-400">*código</span> ou toque para abrir
             </p>
           </div>
         </div>
 
-        <span className="text-[11px] font-mono opacity-60">
-          Rank 1-{limit}
-        </span>
+        <button
+          onClick={() => openBrowser('top15')}
+          className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-mono opacity-80 hover:opacity-100 flex items-center gap-1 transition-all"
+          title="Abrir tela cheia de sucessos"
+        >
+          <span>Ver Todos</span>
+          <span className="text-amber-400 font-bold">⤢</span>
+        </button>
       </div>
 
       {/* Scrollable list of Top 15 Tracks */}
@@ -80,7 +90,7 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
           return (
             <div
               key={track.id}
-              className={`flex items-center justify-between p-2 rounded-xl transition-all duration-150 border ${
+              className={`flex items-center justify-between p-1.5 rounded-lg transition-all duration-150 border ${
                 isCurrent
                   ? isVintage
                     ? 'bg-amber-950/50 border-amber-600 text-amber-200 shadow-md'
@@ -91,10 +101,10 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
               }`}
             >
               {/* Left: Rank & Track details */}
-              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 {/* Rank Badge */}
                 <div
-                  className={`w-6 h-6 shrink-0 rounded-lg flex items-center justify-center font-mono font-extrabold text-xs ${
+                  className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center font-mono font-extrabold text-[10px] ${
                     track.rank === 1
                       ? 'bg-amber-400 text-black shadow-[0_0_8px_#f59e0b]'
                       : track.rank === 2
@@ -109,7 +119,7 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
 
                 {/* Direct Keypad Code Badge */}
                 <span
-                  className={`px-1.5 py-0.5 rounded font-mono font-extrabold text-[11px] tracking-wider shrink-0 border ${
+                  className={`px-1.5 py-0.2 rounded font-mono font-extrabold text-[10px] tracking-wider shrink-0 border ${
                     isCurrent
                       ? 'bg-cyan-400 text-slate-950 border-cyan-300'
                       : isVintage
@@ -125,37 +135,37 @@ export const TopTracksList = ({ limit = 15 }: TopTracksListProps) => {
                 <img
                   src={track.albumArt}
                   alt={track.title}
-                  className="w-8 h-8 rounded-md object-cover shrink-0"
+                  className="w-6 h-6 rounded-md object-cover shrink-0"
                   crossOrigin="anonymous"
                 />
 
                 {/* Title & Artist */}
-                <div className="min-w-0 flex-1 pr-2">
+                <div className="min-w-0 flex-1 pr-1.5">
                   <p className="font-bold text-xs truncate leading-tight">
                     {track.title}
                   </p>
-                  <p className="text-[11px] opacity-70 truncate font-mono">
+                  <p className="text-[9.5px] opacity-70 truncate font-mono">
                     {track.artist}
                   </p>
                 </div>
               </div>
 
               {/* Right: Plays & Actions */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="hidden sm:inline text-[10px] font-mono opacity-50 mr-1">
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="hidden sm:inline text-[9.5px] font-mono opacity-50 mr-0.5">
                   {track.plays}x
                 </span>
 
                 <button
                   onClick={() => addToQueue(track, 'Cliente (Top 15)')}
-                  className={`p-1.5 rounded-lg border text-xs transition-all active:scale-95 ${
+                  className={`p-1 rounded-md border text-xs transition-all active:scale-95 ${
                     isVintage
                       ? 'vintage-neumorphic-btn text-amber-400 hover:text-white'
                       : 'bg-slate-950 border-slate-700 text-slate-300 hover:text-cyan-300'
                   }`}
                   title="Adicionar à fila"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                 </button>
 
                 <button

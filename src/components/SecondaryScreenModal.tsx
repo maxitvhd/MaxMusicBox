@@ -11,6 +11,9 @@ export const SecondaryScreenModal = () => {
   const isPlaying = useJukeboxStore((s) => s.isPlaying);
   const queue = useJukeboxStore((s) => s.queue);
   const theme = useJukeboxStore((s) => s.theme);
+  const ads = useJukeboxStore((s) => s.ads);
+
+  const activeAd = ads.find((a) => (!a.status || a.status === 'ativo') && Boolean(a.url_midia));
 
   const [spectrumData, setSpectrumData] = useState<Uint8Array>(new Uint8Array(16));
 
@@ -146,14 +149,14 @@ export const SecondaryScreenModal = () => {
         </div>
       </div>
 
-      {/* Bottom Bar: "A SEGUIR NA JUKEBOX" Marquee Banner */}
-      <div className="w-full py-3 px-4 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between text-xs font-mono">
+      {/* Bottom Bar: "A SEGUIR NA JUKEBOX" Marquee Banner & Patrocinador */}
+      <div className="w-full py-2.5 px-4 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between text-xs font-mono gap-4">
         <div className="flex items-center gap-2 font-bold uppercase text-amber-400 shrink-0">
           <Music className="w-4 h-4 text-cyan-400" />
           <span>A Seguir:</span>
         </div>
 
-        <div className="flex-1 overflow-hidden mx-4 text-zinc-300 truncate">
+        <div className="flex-1 overflow-hidden text-zinc-300 truncate">
           {queue.length > 0 ? (
             queue.slice(0, 3).map((item, idx) => (
               <span key={item.id} className="mr-6">
@@ -165,7 +168,18 @@ export const SecondaryScreenModal = () => {
           )}
         </div>
 
-        <span className="text-[10px] text-zinc-500 shrink-0">
+        {/* Sponsor Banner no Telão da TV */}
+        {activeAd && activeAd.url_midia && (
+          <div className="flex items-center gap-2.5 px-3 py-1 rounded-lg bg-black/80 border border-amber-500/50 shrink-0">
+            <img src={activeAd.url_midia} alt={activeAd.titulo} className="w-7 h-7 rounded object-cover border border-amber-400/60" />
+            <div>
+              <span className="text-[8px] font-bold uppercase font-mono text-amber-400 block">Patrocínio</span>
+              <span className="text-[11px] font-bold text-white block truncate max-w-[140px]">{activeAd.titulo}</span>
+            </div>
+          </div>
+        )}
+
+        <span className="text-[10px] text-zinc-500 shrink-0 hidden md:inline">
           Peça sua música no terminal touch
         </span>
       </div>

@@ -7,6 +7,10 @@ coverage/
 .env*
 !.env.example
 
+# Credenciais locais (Snap Store login exportado)
+login*.txt
+exported*.txt
+
 # Rust / Tauri
 src-tauri/target/
 

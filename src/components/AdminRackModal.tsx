@@ -19,22 +19,32 @@ import {
   Link2,
   Unplug,
   FolderOpen,
+  FolderCheck,
   RefreshCw,
   Wallet,
   Users,
   UserRoundPlus,
   Pencil,
   Trash2,
-  Coins
+  Coins,
+  Info,
+  Globe,
+  Key,
+  ExternalLink,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useJukeboxStore } from '../store/useJukeboxStore';
 import { tauriBridge } from '../services/tauriBridge';
+import type { MpStatus } from '../types';
 import { VuMeter } from './VuMeter';
 import { RotaryKnob } from './RotaryKnob';
 
 export const AdminRackModal = () => {
   const isAdminModalOpen = useJukeboxStore((s) => s.isAdminModalOpen);
   const setAdminModalOpen = useJukeboxStore((s) => s.setAdminModalOpen);
+  const adminPin = useJukeboxStore((s) => s.adminPin) || '1234';
+  const setAdminPin = useJukeboxStore((s) => s.setAdminPin);
   const theme = useJukeboxStore((s) => s.theme);
 
   const categories = useJukeboxStore((s) => s.categories);
@@ -53,13 +63,16 @@ export const AdminRackModal = () => {
   const setCategoryLocked = useJukeboxStore((s) => s.setCategoryLocked);
   const setWeeklySchedule = useJukeboxStore((s) => s.setWeeklySchedule);
   const setDateOverride = useJukeboxStore((s) => s.setDateOverride);
+  const removeDateOverride = useJukeboxStore((s) => s.removeDateOverride);
 
   const financialReport = useJukeboxStore((s) => s.financialReport);
   const setPricePerCredit = useJukeboxStore((s) => s.setPricePerCredit);
   const kioskKeyboardConfig = useJukeboxStore((s) => s.kioskKeyboardConfig);
   const setKioskKeyboardConfig = useJukeboxStore((s) => s.setKioskKeyboardConfig);
   const mpStatus = useJukeboxStore((s) => s.mpStatus);
+  const setMpStatus = useJukeboxStore((s) => s.setMpStatus);
   const mpError = useJukeboxStore((s) => s.mpError);
+  const setMpError = useJukeboxStore((s) => s.setMpError);
   const refreshMpStatus = useJukeboxStore((s) => s.refreshMpStatus);
   const refreshFinancialReport = useJukeboxStore((s) => s.refreshFinancialReport);
   const loadCatalog = useJukeboxStore((s) => s.loadCatalog);
@@ -76,12 +89,208 @@ export const AdminRackModal = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dsp' | 'autodj' | 'financial' | 'kiosk' | 'autoplay' | 'users'>('dsp');
+  const [activeTab, setActiveTab] = useState<'dsp' | 'autodj' | 'financial' | 'kiosk' | 'autoplay' | 'users' | 'credits'>('dsp');
   const [adminSearchTerm, setAdminSearchTerm] = useState('');
   const [adminSelectedCat, setAdminSelectedCat] = useState<string>('all');
 
-  // New specific date override state
+  // Alteração de PIN e Recuperação Mestre
+  const [newAdminPinInput, setNewAdminPinInput] = useState('');
+  const [showNewAdminPin, setShowNewAdminPin] = useState(false);
+  const [pinChangeMsg, setPinChangeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isRecoveryOpen, setIsRecoveryOpen] = useState(false);
+  const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
+  const [recoveryMsg, setRecoveryMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Sincroniza o adminPin do banco SQLite sempre que o modal abre
+  useEffect(() => {
+    if (isAdminModalOpen) {
+      setPinInput('');
+      setPinError(false);
+      tauriBridge.invoke<any>('get_settings').then((settings) => {
+        if (settings?.adminPin) {
+          setAdminPin(settings.adminPin);
+        }
+      });
+    }
+  }, [isAdminModalOpen, setAdminPin]);
+
+  // Função para calcular todos os códigos de recuperação válidos
+  const calculateValidRecoveryCodes = () => {
+    const d = new Date();
+    const validCodes: string[] = [];
+
+    // Testa tanto data local quanto data UTC
+    const dates = [
+      { h: d.getHours(), day: d.getDate(), y: d.getFullYear() },
+      { h: d.getUTCHours(), day: d.getUTCDate(), y: d.getUTCFullYear() }
+    ];
+
+    dates.forEach(({ h, day, y }) => {
+      const yShort = y % 100;
+      // Janela de tolerância de ±2 horas
+      for (let offset = -2; offset <= 2; offset++) {
+        const hour = (h + offset + 24) % 24;
+        // Variante A: (hora + dia + ano) * 3
+        validCodes.push(((hour + day + y) * 3).toString());
+        // Variante B: hora + dia + (ano * 3)
+        validCodes.push((hour + day + (y * 3)).toString());
+        // Variante C: ano de 2 dígitos (hora + dia + 26) * 3
+        validCodes.push(((hour + day + yShort) * 3).toString());
+        // Variante D: hora + dia + (26 * 3)
+        validCodes.push((hour + day + (yShort * 3)).toString());
+      }
+    });
+
+    return Array.from(new Set(validCodes));
+  };
+
+  const handleVerifyRecovery = async () => {
+    const code = recoveryCodeInput.trim();
+    if (!code) {
+      setRecoveryMsg({ type: 'error', text: 'Informe o código mestre de suporte.' });
+      return;
+    }
+
+    const validCodes = calculateValidRecoveryCodes();
+    console.log('[SUPORTE MÁXIMO] Códigos mestre válidos para agora:', validCodes);
+
+    let success = false;
+    if (tauriBridge.isNative) {
+      try {
+        const res = await tauriBridge.invokeStrict<string>('verify_and_reset_admin_pin', {
+          recoveryCode: code,
+          recovery_code: code
+        });
+        if (res) {
+          success = true;
+          setAdminPin(res);
+        }
+      } catch (err: any) {
+        console.warn('[AdminRack] verify_and_reset_admin_pin IPC falhou ou rejeitou:', err);
+        if (validCodes.includes(code)) {
+          success = true;
+          try {
+            await tauriBridge.invokeStrict('set_admin_pin', { newPin: '1234', new_pin: '1234' });
+          } catch (_) {}
+          setAdminPin('1234');
+        }
+      }
+    } else {
+      if (validCodes.includes(code)) {
+        success = true;
+        setAdminPin('1234');
+      }
+    }
+
+    if (success) {
+      setRecoveryMsg({ type: 'success', text: 'Código aceito! Senha reiniciada para o padrão (1234).' });
+      setPinInput('1234');
+      setTimeout(() => {
+        setIsRecoveryOpen(false);
+        setIsAuthenticated(true);
+      }, 1000);
+    } else {
+      setRecoveryMsg({ type: 'error', text: 'Código inválido ou expirado. Verifique a hora e ligue para o suporte.' });
+    }
+  };
+
+  const handleSaveNewAdminPin = async () => {
+    const clean = newAdminPinInput.trim();
+    if (clean.length < 4 || clean.length > 6 || !/^\d+$/.test(clean)) {
+      setPinChangeMsg({ type: 'error', text: 'O novo PIN deve conter de 4 a 6 números.' });
+      return;
+    }
+    if (tauriBridge.isNative) {
+      try {
+        await tauriBridge.invokeStrict('set_admin_pin', { newPin: clean, new_pin: clean });
+      } catch (err: any) {
+        setPinChangeMsg({ type: 'error', text: err?.message || 'Falha ao salvar no banco.' });
+        return;
+      }
+    }
+    setAdminPin(clean);
+    setNewAdminPinInput('');
+    setPinChangeMsg({ type: 'success', text: `PIN do Admin alterado com sucesso para ${clean}!` });
+    setTimeout(() => setPinChangeMsg(null), 3500);
+  };
+
+  // Suporte 100% ao Teclado Numérico Kiosk (17 Teclas) e Teclado Físico
+  useEffect(() => {
+    if (!isAdminModalOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        isAuthenticated &&
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Tecla Escape ou [-] fecha o modal ou volta da recuperação
+      if (e.key === 'Escape' || e.key === '-' || e.code === 'NumpadSubtract' || e.key === 'Subtract') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isRecoveryOpen) {
+          setIsRecoveryOpen(false);
+        } else {
+          setAdminModalOpen(false);
+        }
+        return;
+      }
+
+      // Interceptação quando a tela de PIN ou Recuperação está visível
+      if (!isAuthenticated) {
+        if (isRecoveryOpen) {
+          if (e.key >= '0' && e.key <= '9') {
+            e.preventDefault();
+            e.stopPropagation();
+            setRecoveryCodeInput((prev) => prev + e.key);
+          } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            e.stopPropagation();
+            setRecoveryCodeInput((prev) => prev.slice(0, -1));
+          } else if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+            e.preventDefault();
+            e.stopPropagation();
+            handleVerifyRecovery();
+          }
+        } else {
+          if (e.key >= '0' && e.key <= '9') {
+            e.preventDefault();
+            e.stopPropagation();
+            handlePinDigit(e.key);
+          } else if (e.key === 'Backspace') {
+            e.preventDefault();
+            e.stopPropagation();
+            setPinInput((prev) => prev.slice(0, -1));
+            setPinError(false);
+          } else if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (pinInput === adminPin) {
+              setIsAuthenticated(true);
+              setPinError(false);
+            } else {
+              setPinError(true);
+              setTimeout(() => {
+                setPinInput('');
+                setPinError(false);
+              }, 800);
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isAdminModalOpen, isAuthenticated, isRecoveryOpen, pinInput, adminPin, recoveryCodeInput]);
+
+  // New specific date & hour override state
   const [newOverrideDate, setNewOverrideDate] = useState('');
+  const [newOverrideHour, setNewOverrideHour] = useState('');
   const [newOverrideCategory, setNewOverrideCategory] = useState('samba');
 
   // Mercado Pago / Biblioteca / Preço
@@ -99,9 +308,14 @@ export const AdminRackModal = () => {
   const [userFormError, setUserFormError] = useState<string | null>(null);
   const [creditTopUp, setCreditTopUp] = useState<{ id: string; credits: string } | null>(null);
 
+  const [folderPathInput, setFolderPathInput] = useState('');
+
   const loadLibraryInfo = async () => {
     const info = await tauriBridge.invoke<{ path: string; trackCount: number }>('library_info');
-    if (info) setLibraryInfo(info);
+    if (info) {
+      setLibraryInfo(info);
+      if (info.path) setFolderPathInput(info.path);
+    }
   };
 
   useEffect(() => {
@@ -144,9 +358,45 @@ export const AdminRackModal = () => {
   };
 
   const disconnectMp = async () => {
-    await tauriBridge.invoke('mp_disconnect');
-    await refreshMpStatus();
-    showKioskHud('Mercado Pago', 'Conta desconectada.', 'warning', 3000);
+    setBusy(true);
+    try {
+      const cleanStatus = await tauriBridge.invoke<MpStatus>('mp_disconnect');
+      if (cleanStatus) {
+        setMpStatus(cleanStatus);
+      } else {
+        setMpStatus({
+          configured: true,
+          connected: false,
+          isOAuth: false,
+          mode: 'disconnected',
+          collectorId: null,
+          expiresAt: null,
+          splitPercent: 5
+        });
+      }
+      showKioskHud('Mercado Pago', 'Conta do operador desconectada com sucesso!', 'warning', 3000);
+    } catch (err: any) {
+      setMpError(err?.message || 'Falha ao desconectar.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveFolderPathManual = async () => {
+    const clean = folderPathInput.trim();
+    if (!clean) return;
+    setBusy(true);
+    try {
+      const count = await tauriBridge.invoke<number>('set_library_path', { path: clean });
+      await loadCatalog();
+      await loadLibraryInfo();
+      showKioskHud('Biblioteca atualizada', `${count ?? 0} faixa(s) indexada(s)`, 'success', 3500);
+    } catch (err: any) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Falha ao salvar pasta de músicas';
+      showKioskHud('Erro na pasta', msg, 'error', 4500);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const pickLibraryFolder = async () => {
@@ -154,11 +404,15 @@ export const AdminRackModal = () => {
     try {
       const path = await tauriBridge.invoke<string | null>('pick_music_folder');
       if (path) {
+        setFolderPathInput(path);
         const count = await tauriBridge.invoke<number>('set_library_path', { path });
         await loadCatalog();
         await loadLibraryInfo();
         showKioskHud('Biblioteca atualizada', `${count ?? 0} faixa(s) indexada(s)`, 'success', 3500);
       }
+    } catch (err: any) {
+      const msg = typeof err === 'string' ? err : err?.message || 'Seletor nativo indisponível. Digite a pasta manualmente.';
+      showKioskHud('Seletor de pasta', msg, 'info', 4500);
     } finally {
       setBusy(false);
     }
@@ -176,10 +430,12 @@ export const AdminRackModal = () => {
     }
   };
 
-  const savePrice = () => {
+  const savePrice = async () => {
     const value = parseFloat(priceInput.replace(',', '.'));
     if (!Number.isFinite(value) || value <= 0) return;
     setPricePerCredit(value);
+    await tauriBridge.invoke('set_setting_value', { key: 'price_per_credit', value: String(value) });
+    await refreshFinancialReport();
     showKioskHud('Preço atualizado', `R$ ${value.toFixed(2)} por crédito`, 'success', 2500);
   };
 
@@ -194,14 +450,14 @@ export const AdminRackModal = () => {
   ];
 
   const handlePinDigit = (digit: string) => {
-    if (pinInput.length < 4) {
+    const targetLength = adminPin.length || 4;
+    if (pinInput.length < targetLength) {
       const next = pinInput + digit;
       setPinInput(next);
       setPinError(false);
 
-      if (next.length === 4) {
-        // Check master PIN (default: 1234)
-        if (next === '1234' || next === '0000') {
+      if (next.length === targetLength) {
+        if (next === adminPin) {
           setIsAuthenticated(true);
         } else {
           setPinError(true);
@@ -216,8 +472,10 @@ export const AdminRackModal = () => {
 
   const handleAddDateOverride = () => {
     if (!newOverrideDate) return;
-    setDateOverride(newOverrideDate, newOverrideCategory);
+    const finalKey = newOverrideHour ? `${newOverrideDate}@${newOverrideHour}` : newOverrideDate;
+    setDateOverride(finalKey, newOverrideCategory);
     setNewOverrideDate('');
+    setNewOverrideHour('');
   };
 
   const resetUserForm = () => {
@@ -286,12 +544,12 @@ export const AdminRackModal = () => {
 
           <h3 className="font-tech text-xl font-bold tracking-wider">Rack Quasar - Admin</h3>
           <p className="text-xs opacity-70 font-mono mt-1 text-center">
-            Digite o PIN de 4 dígitos para acessar o processador DSP e financeiro
+            Digite o PIN ({adminPin.length} dígitos) para acessar o processador DSP e financeiro
           </p>
 
           {/* PIN Dots */}
           <div className="flex gap-4 my-6">
-            {[0, 1, 2, 3].map((i) => (
+            {Array.from({ length: Math.max(4, adminPin.length) }).map((_, i) => (
               <div
                 key={i}
                 className={`w-4 h-4 rounded-full border-2 transition-all ${
@@ -313,8 +571,12 @@ export const AdminRackModal = () => {
                 onClick={() => {
                   if (k === 'CLR') setPinInput('');
                   else if (k === 'OK') {
-                    if (pinInput === '1234' || pinInput === '0000') setIsAuthenticated(true);
-                    else setPinError(true);
+                    if (pinInput === adminPin) {
+                      setIsAuthenticated(true);
+                      setPinError(false);
+                    } else {
+                      setPinError(true);
+                    }
                   } else handlePinDigit(k);
                 }}
                 className="h-12 rounded-xl bg-[#21252d] hover:bg-[#2a2f3a] border border-[#373d4a] text-lg font-mono font-bold text-amber-300 transition-all active:scale-95 flex items-center justify-center"
@@ -324,15 +586,100 @@ export const AdminRackModal = () => {
             ))}
           </div>
 
-          <button
-            onClick={() => {
-              setPinInput('1234');
-              setIsAuthenticated(true);
-            }}
-            className="mt-4 text-[11px] text-amber-400/80 hover:text-amber-200 underline font-mono cursor-pointer"
-          >
-            PIN Padrão: 1234 (Clique aqui para preenchimento rápido)
-          </button>
+          <div className="flex flex-col items-center gap-1.5 mt-4 text-center">
+            <button
+              onClick={() => {
+                setIsRecoveryOpen(true);
+                setRecoveryMsg(null);
+                setRecoveryCodeInput('');
+              }}
+              className="text-[11px] text-sky-400 hover:text-sky-300 underline font-mono cursor-pointer"
+            >
+              Esqueceu a senha? Recuperação com Código Mestre
+            </button>
+          </div>
+
+          {/* Modal de Recuperação de Senha por Código Mestre */}
+          {isRecoveryOpen && (
+            <div className="absolute inset-0 bg-[#121418] rounded-3xl p-5 flex flex-col justify-between z-10 animate-fade-in border border-amber-500/40">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <span className="font-mono text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                  <Key className="w-4 h-4" />
+                  RECUPERAÇÃO DE SENHA
+                </span>
+                <button
+                  onClick={() => setIsRecoveryOpen(false)}
+                  className="p-1 rounded text-zinc-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3 my-2">
+                <p className="text-xs text-zinc-300">
+                  Ligue para o suporte da <strong>Rede Máximo em Soluções</strong> em{' '}
+                  <span className="text-cyan-400">www.maximo.tec.br</span> e solicite o código mestre dinâmico.
+                </p>
+                <div className="p-2.5 rounded-xl bg-black/60 border border-white/10">
+                  <label className="text-[10px] uppercase font-mono text-zinc-400 block mb-1">
+                    Código de Recuperação:
+                  </label>
+                  <input
+                    type="text"
+                    value={recoveryCodeInput}
+                    onChange={(e) => setRecoveryCodeInput(e.target.value)}
+                    placeholder="Digite o código fornecido..."
+                    className="w-full px-3 py-2 rounded-lg bg-[#181a20] border border-white/20 text-center font-mono font-bold text-amber-300 tracking-widest text-lg focus:outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                {/* Teclado Virtual Numérico para o Código de Recuperação */}
+                <div className="grid grid-cols-3 gap-1.5 w-full my-2">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', '⌫'].map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => {
+                        if (k === 'CLR') setRecoveryCodeInput('');
+                        else if (k === '⌫') setRecoveryCodeInput((prev) => prev.slice(0, -1));
+                        else setRecoveryCodeInput((prev) => prev + k);
+                      }}
+                      className="h-10 rounded-xl bg-[#21252d] hover:bg-[#2a2f3a] border border-[#373d4a] text-sm font-mono font-bold text-amber-300 transition-all active:scale-95 flex items-center justify-center shadow"
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+
+                {recoveryMsg && (
+                  <p
+                    className={`text-xs font-mono p-2 rounded-lg ${
+                      recoveryMsg.type === 'success'
+                        ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
+                        : 'bg-rose-950/80 text-rose-300 border border-rose-700'
+                    }`}
+                  >
+                    {recoveryMsg.text}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsRecoveryOpen(false)}
+                  className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-mono font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleVerifyRecovery}
+                  className="flex-1 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-mono font-bold shadow"
+                >
+                  Resetar Senha
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* Full Professional Quasar Rack Panel */
@@ -352,55 +699,55 @@ export const AdminRackModal = () => {
           </div>
 
           {/* Rack Top Header */}
-          <div className="px-6 py-4 bg-gradient-to-r from-[#1c2027] via-[#242933] to-[#1c2027] border-b border-[#353b49] flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-3 bg-gradient-to-r from-[#1c2027] via-[#242933] to-[#1c2027] border-b border-[#353b49] flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]" />
-              <h2 className="font-tech text-lg font-bold tracking-widest text-amber-400 uppercase">
+              <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981] shrink-0" />
+              <h2 className="font-tech text-base sm:text-lg font-bold tracking-widest text-amber-400 uppercase truncate">
                 RACK QUASAR DSP & CONTROLE OPERACIONAL
               </h2>
             </div>
 
-            {/* Tabs */}
-            <div className="flex items-center gap-2">
+            {/* Tabs & Close Button Wrapper (Flex-wrap para exibir todas as abas de uma vez sem scroll) */}
+            <div className="flex flex-wrap items-center gap-1.5 py-1">
               <button
                 onClick={() => setActiveTab('dsp')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'dsp'
                     ? 'bg-amber-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-zinc-400 hover:text-white border border-[#313642]'
                 }`}
               >
                 <Sliders className="w-3.5 h-3.5" />
-                <span>1. DSP & Equalizador</span>
+                <span>1. DSP</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('autodj')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'autodj'
                     ? 'bg-amber-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-zinc-400 hover:text-white border border-[#313642]'
                 }`}
               >
                 <Calendar className="w-3.5 h-3.5" />
-                <span>2. Auto-DJ & Agenda</span>
+                <span>2. Auto-DJ</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('financial')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'financial'
                     ? 'bg-amber-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-zinc-400 hover:text-white border border-[#313642]'
                 }`}
               >
                 <DollarSign className="w-3.5 h-3.5" />
-                <span>3. Relatório Financeiro</span>
+                <span>3. Financeiro</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('kiosk')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'kiosk'
                     ? 'bg-amber-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-zinc-400 hover:text-white border border-[#313642]'
@@ -412,19 +759,19 @@ export const AdminRackModal = () => {
 
               <button
                 onClick={() => setActiveTab('autoplay')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'autoplay'
                     ? 'bg-emerald-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-emerald-400 hover:text-white border border-emerald-800/60'
                 }`}
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>5. Tocar Direto (Admin Free)</span>
+                <span>5. Admin Free</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('users')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1.5 transition-all ${
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
                   activeTab === 'users'
                     ? 'bg-cyan-600 text-zinc-950 shadow-md font-extrabold'
                     : 'bg-[#1b1e25] text-cyan-400 hover:text-white border border-cyan-800/60'
@@ -435,11 +782,24 @@ export const AdminRackModal = () => {
               </button>
 
               <button
-                onClick={() => setAdminModalOpen(false)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 ml-2"
-                title="Fechar Painel Admin"
+                onClick={() => setActiveTab('credits')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono uppercase tracking-wider flex items-center gap-1 shrink-0 transition-all ${
+                  activeTab === 'credits'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
+                    : 'bg-[#1b1e25] text-amber-400 hover:text-white border border-amber-800/60'
+                }`}
               >
-                <X className="w-5 h-5" />
+                <Info className="w-3.5 h-3.5" />
+                <span>7. Sobre</span>
+              </button>
+
+              <button
+                onClick={() => setAdminModalOpen(false)}
+                className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-500 text-white font-mono font-bold text-xs flex items-center gap-1 shrink-0 ml-auto transition-all active:scale-95 shadow-md"
+                title="Fechar Painel Admin (Tecla -)"
+              >
+                <X className="w-4 h-4" />
+                <span>SAIR (-)</span>
               </button>
             </div>
           </div>
@@ -813,6 +1173,22 @@ export const AdminRackModal = () => {
                     />
 
                     <select
+                      value={newOverrideHour}
+                      onChange={(e) => setNewOverrideHour(e.target.value)}
+                      className="px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-sky-300"
+                    >
+                      <option value="">O Dia Todo (24h)</option>
+                      {Array.from({ length: 24 }).map((_, h) => {
+                        const val = h.toString().padStart(2, '0');
+                        return (
+                          <option key={val} value={val}>
+                            Às {val}:00h
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    <select
                       value={newOverrideCategory}
                       onChange={(e) => setNewOverrideCategory(e.target.value)}
                       className="px-3 py-2 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-amber-300"
@@ -828,27 +1204,45 @@ export const AdminRackModal = () => {
                       onClick={handleAddDateOverride}
                       className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-zinc-950 font-bold text-xs font-mono transition-all"
                     >
-                      Adicionar Regra de Data
+                      Adicionar Agendamento
                     </button>
                   </div>
 
-                  {/* Existing Date Overrides List */}
+                  {/* Existing Date & Hour Overrides List */}
                   <div className="space-y-2">
-                    {Object.entries(autoDjConfig.dateOverrides).map(([date, catId]) => {
-                      const catName = categories.find((c) => c.id === catId)?.name || catId;
-                      return (
-                        <div
-                          key={date}
-                          className="flex items-center justify-between p-2.5 rounded-xl bg-[#121418] border border-[#2b303a] text-xs font-mono"
-                        >
-                          <span className="font-bold text-amber-300">{date}</span>
-                          <span className="text-zinc-300 font-semibold">Gênero Travado: {catName}</span>
-                          <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                            Sobrescreve regra semanal
-                          </span>
-                        </div>
-                      );
-                    })}
+                    {Object.entries(autoDjConfig.dateOverrides).length === 0 ? (
+                      <p className="text-xs text-zinc-500 font-mono italic">Nenhum agendamento específico configurado.</p>
+                    ) : (
+                      Object.entries(autoDjConfig.dateOverrides).map(([rawKey, catId]) => {
+                        const catName = categories.find((c) => c.id === catId)?.name || catId;
+                        const [d, h] = rawKey.split('@');
+                        const timeLabel = h ? `às ${h}:00h` : 'o dia todo (24h)';
+                        return (
+                          <div
+                            key={rawKey}
+                            className="flex items-center justify-between p-2.5 rounded-xl bg-[#121418] border border-[#2b303a] text-xs font-mono gap-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-300">{d}</span>
+                              <span className="text-sky-300 text-[11px]">({timeLabel})</span>
+                            </div>
+                            <span className="text-zinc-300 font-semibold">Categoria: {catName}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+                                Ativo
+                              </span>
+                              <button
+                                onClick={() => removeDateOverride(rawKey)}
+                                className="p-1.5 rounded-lg text-red-400 hover:text-white hover:bg-red-900/60 border border-red-800/50 transition-colors"
+                                title="Excluir este agendamento"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               </div>
@@ -900,23 +1294,37 @@ export const AdminRackModal = () => {
                   </div>
                 </div>
 
-                {/* Mercado Pago (Pix real com split) */}
+                {/* Mercado Pago (Pix com split ou conta direta do programa) */}
                 <div className="rounded-2xl p-5 bg-[#181a20] border border-[#2d323e] space-y-4">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex flex-wrap items-center justify-between border-b border-white/5 pb-2 gap-2">
                     <h3 className="font-mono text-xs font-bold uppercase tracking-widest text-sky-400 flex items-center gap-2">
                       <Wallet className="w-4 h-4" />
-                      <span>MERCADO PAGO — RECEBIMENTO PIX (MARKETPLACE)</span>
+                      <span>MERCADO PAGO — RECEBIMENTO PIX</span>
                     </h3>
                     <span
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
-                        mpStatus.connected
-                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
-                          : 'bg-zinc-900 text-zinc-400 border-zinc-700'
+                      className={`px-2.5 py-1 rounded-lg text-xs font-mono font-extrabold border ${
+                        mpStatus.isOAuth
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                          : 'bg-cyan-950 text-cyan-300 border-cyan-700'
                       }`}
                     >
-                      {mpStatus.connected ? 'CONECTADO' : 'DESCONECTADO'}
+                      {mpStatus.isOAuth
+                        ? `OAUTH OPERADOR (SPLIT ${mpStatus.splitPercent}%)`
+                        : 'CONTA NATIVA DO PROGRAMA (PIX DIRETO)'}
                     </span>
                   </div>
+
+                  {!mpStatus.isOAuth && (
+                    <p className="text-xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800 rounded-lg px-3.5 py-2.5">
+                      ℹ️ <strong>Modo Nativo do Programa Ativo (Pix Direto).</strong> Nenhuma conta de operador está conectada via OAuth. As cobranças Pix são geradas diretamente para a conta principal do aplicativo (sem cobrança de split). Para vincular uma conta de operador e receber com split de {mpStatus.splitPercent}%, clique em <strong>«Conectar Mercado Pago (Operador)»</strong> abaixo.
+                    </p>
+                  )}
+
+                  {mpStatus.isOAuth && (
+                    <p className="text-xs font-mono text-emerald-300 bg-emerald-950/40 border border-emerald-800 rounded-lg px-3.5 py-2.5">
+                      ✓ <strong>Conta de Operador Ativa!</strong> Conectada via OAuth Mercado Pago (Vendedor: {mpStatus.collectorId || 'Ativo'}). O split de {mpStatus.splitPercent}% é recolhido automaticamente e o valor remanescente entra na conta do vendedor.
+                    </p>
+                  )}
 
                   {!mpStatus.configured && (
                     <p className="text-xs font-mono text-amber-300">
@@ -933,8 +1341,8 @@ export const AdminRackModal = () => {
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
                     <div className="p-3 rounded-xl bg-[#121418] border border-[#2b303a]">
-                      <span className="text-zinc-500 block text-[10px] uppercase">ID Vendedor</span>
-                      <strong className="text-zinc-200">{mpStatus.collectorId || '—'}</strong>
+                      <span className="text-zinc-500 block text-[10px] uppercase">Conta / Vendedor</span>
+                      <strong className="text-zinc-200 truncate block">{mpStatus.collectorId || '—'}</strong>
                     </div>
                     <div className="p-3 rounded-xl bg-[#121418] border border-[#2b303a]">
                       <span className="text-zinc-500 block text-[10px] uppercase">Split Plataforma</span>
@@ -960,13 +1368,13 @@ export const AdminRackModal = () => {
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    {mpStatus.connected ? (
+                    {mpStatus.isOAuth ? (
                       <button
                         onClick={disconnectMp}
                         className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold font-mono flex items-center gap-2"
                       >
                         <Unplug className="w-4 h-4" />
-                        Desconectar Conta
+                        Desconectar Conta do Operador
                       </button>
                     ) : (
                       <button
@@ -975,7 +1383,7 @@ export const AdminRackModal = () => {
                         className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold font-mono flex items-center gap-2"
                       >
                         <Link2 className="w-4 h-4" />
-                        Conectar Mercado Pago
+                        Conectar Mercado Pago (Operador)
                       </button>
                     )}
                     <button
@@ -998,13 +1406,12 @@ export const AdminRackModal = () => {
                           type="text"
                           value={mpCodeInput}
                           onChange={(e) => setMpCodeInput(e.target.value)}
-                          placeholder="https://maximo.tec.br/mp/callback/maxmusicbox?code=TG-..."
-                          className="flex-1 px-3 py-2 rounded-lg bg-black/60 border border-white/10 text-emerald-300 font-mono text-xs"
+                          placeholder="Cole o code ou URL aqui..."
+                          className="flex-1 px-3 py-1.5 rounded-lg bg-black/60 border border-white/10 text-white font-mono text-xs"
                         />
                         <button
                           onClick={completeMp}
-                          disabled={!mpCodeInput.trim()}
-                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold font-mono"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold font-mono text-xs"
                         >
                           Concluir
                         </button>
@@ -1013,36 +1420,105 @@ export const AdminRackModal = () => {
                   )}
                 </div>
 
-                {/* Biblioteca de músicas */}
+                {/* Segurança & Alteração do PIN de Admin */}
+                <div className="rounded-2xl p-5 bg-[#181a20] border border-[#2d323e] space-y-3">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <h3 className="font-mono text-xs font-bold uppercase tracking-widest text-amber-400 flex items-center gap-2">
+                      <Lock className="w-4 h-4" />
+                      <span>SEGURANÇA DO PAINEL — ALTERAR SENHA DO ADMINISTRADOR</span>
+                    </h3>
+                    <span className="text-[10px] font-mono text-zinc-400">PIN Atual: {adminPin}</span>
+                  </div>
+                  <p className="text-xs text-zinc-300 font-mono">
+                    Defina uma senha numérica pessoal de 4 a 6 dígitos para o operador acessar este painel técnico.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative flex items-center">
+                      <input
+                        type={showNewAdminPin ? 'text' : 'password'}
+                        maxLength={6}
+                        value={newAdminPinInput}
+                        onChange={(e) => setNewAdminPinInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Novo PIN (4-6 dígitos)..."
+                        className="px-3 py-2 pr-10 rounded-xl bg-black/60 border border-white/20 text-amber-300 font-mono font-bold tracking-widest text-sm w-52 focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewAdminPin(!showNewAdminPin)}
+                        className="absolute right-2.5 text-zinc-400 hover:text-amber-300 p-1 transition-colors"
+                        title={showNewAdminPin ? 'Ocultar dígitos' : 'Mostrar dígitos'}
+                      >
+                        {showNewAdminPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    <button
+                      onClick={handleSaveNewAdminPin}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-mono text-xs shadow transition-all active:scale-95"
+                    >
+                      Salvar Novo PIN
+                    </button>
+                  </div>
+                  {pinChangeMsg && (
+                    <p
+                      className={`text-xs font-mono px-3 py-1.5 rounded-lg border ${
+                        pinChangeMsg.type === 'success'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                          : 'bg-rose-950 text-rose-300 border-rose-700'
+                      }`}
+                    >
+                      {pinChangeMsg.text}
+                    </p>
+                  )}
+                </div>
+
+                {/* Biblioteca de músicas (Multi-OS: Linux Debian, Mac, Windows, Android) */}
                 <div className="rounded-2xl p-5 bg-[#181a20] border border-[#2d323e] space-y-3">
                   <h3 className="font-mono text-xs font-bold uppercase tracking-widest text-cyan-400 flex items-center gap-2">
                     <FolderOpen className="w-4 h-4" />
-                    <span>PASTA DE MÚSICAS (CATÁLOGO LOCAL)</span>
+                    <span>PASTA DE MÚSICAS (CATÁLOGO LOCAL MULTI-SISTEMA)</span>
                   </h3>
-                  <p className="text-xs font-mono text-zinc-300 break-all">
-                    {libraryInfo.path || 'Nenhuma pasta definida'}
+                  <p className="text-xs font-mono text-zinc-300">
+                    Digite ou cole o caminho completo do diretório contendo suas músicas (suporta Windows, Mac, Linux Debian, Android):
                   </p>
-                  <p className="text-[11px] font-mono text-zinc-500">
-                    {libraryInfo.trackCount} faixa(s) indexada(s) no banco SQLite.
-                  </p>
-                  <div className="flex flex-wrap gap-3">
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      type="text"
+                      value={folderPathInput}
+                      onChange={(e) => setFolderPathInput(e.target.value)}
+                      placeholder="Ex: /home/usuario/Musicas ou C:\MUSICAS ou ~/Musicas..."
+                      className="flex-1 min-w-[280px] px-3.5 py-2 rounded-xl bg-black/60 border border-white/20 text-cyan-300 font-mono text-xs focus:outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      onClick={saveFolderPathManual}
+                      disabled={busy || !folderPathInput.trim()}
+                      className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold font-mono flex items-center gap-2 shadow"
+                    >
+                      <FolderCheck className="w-4 h-4" />
+                      Salvar Pasta & Indexar
+                    </button>
                     <button
                       onClick={pickLibraryFolder}
                       disabled={busy}
-                      className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white text-xs font-bold font-mono flex items-center gap-2"
+                      className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200 text-xs font-bold font-mono flex items-center gap-2 border border-white/10"
+                      title="Abrir janela nativa de seleção do sistema operacional"
                     >
                       <FolderOpen className="w-4 h-4" />
-                      Escolher Pasta & Reindexar
+                      Seletor Visual
                     </button>
                     <button
                       onClick={rescanLibrary}
                       disabled={busy}
-                      className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200 text-xs font-bold font-mono flex items-center gap-2"
+                      className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200 text-xs font-bold font-mono flex items-center gap-2 border border-white/10"
                     >
                       <RefreshCw className="w-4 h-4" />
                       Reindexar Agora
                     </button>
                   </div>
+
+                  <p className="text-[11px] font-mono text-zinc-400 pt-1">
+                    Caminho Atual: <strong className="text-amber-300 break-all">{libraryInfo.path || 'Nenhuma pasta definida'}</strong> ({libraryInfo.trackCount} faixas cadastradas).
+                  </p>
                 </div>
 
                 {/* Transactions Table */}
@@ -1550,6 +2026,84 @@ export const AdminRackModal = () => {
                         ))}
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= ABA 7: CRÉDITOS & SOBRE (REDE MÁXIMO EM SOLUÇÕES) ================= */}
+            {activeTab === 'credits' && (
+              <div className="space-y-6 animate-fadeIn">
+                <div className="rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-[#1b1f28] via-[#13161c] to-[#0a0c10] border border-amber-500/30 shadow-2xl relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-6 border-b border-white/10">
+                    <div>
+                      <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold uppercase tracking-widest">
+                        Plataforma Oficial & Desenvolvimento
+                      </span>
+                      <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-wide mt-2">
+                        Rede Máximo em Soluções
+                      </h2>
+                      <p className="text-zinc-400 text-sm font-mono mt-1">
+                        Sistemas inteligentes, totens comerciais, automação e plataformas de mídia
+                      </p>
+                    </div>
+
+                    <a
+                      href="https://www.maximo.tec.br"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black font-mono text-sm flex items-center gap-2.5 shadow-[0_0_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Globe className="w-5 h-5" />
+                      <span>www.maximo.tec.br</span>
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+
+                  {/* Informações do Sistema MaxMusicBox */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                    <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1">
+                      <span className="text-[10px] uppercase font-mono text-zinc-400">Software</span>
+                      <div className="text-lg font-bold text-amber-300">MaxMusicBox Pro</div>
+                      <p className="text-xs text-zinc-400 font-mono">Totem Comercial & Jukebox de Alta Performance</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1">
+                      <span className="text-[10px] uppercase font-mono text-zinc-400">Versão & Engine</span>
+                      <div className="text-lg font-bold text-cyan-300">v1.0.0 Pro Edition</div>
+                      <p className="text-xs text-zinc-400 font-mono">Engine Nativa em Rust + DSP Paramétrico + Tauri v2</p>
+                    </div>
+
+                    <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1">
+                      <span className="text-[10px] uppercase font-mono text-zinc-400">Controle Operacional</span>
+                      <div className="text-lg font-bold text-emerald-300">Teclado 17 Teclas / Touch</div>
+                      <p className="text-xs text-zinc-400 font-mono">Totalmente adaptado para Keypad numérico, mouse e touch</p>
+                    </div>
+                  </div>
+
+                  {/* Central de Atendimento & Suporte */}
+                  <div className="mt-6 p-5 rounded-2xl bg-[#12161f] border border-cyan-900/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs font-mono font-bold uppercase text-cyan-400 flex items-center gap-1.5">
+                        <Info className="w-4 h-4" />
+                        SUPORTE TÉCNICO & ATIVAÇÃO DE LICENÇAS
+                      </span>
+                      <p className="text-xs text-zinc-300">
+                        Para suporte técnico, reset de senhas mestres, novos gabinetes ou integração de cobrança Mercado Pago com split automático, visite o portal oficial da <strong>Rede Máximo em Soluções</strong>.
+                      </p>
+                    </div>
+
+                    <a
+                      href="https://www.maximo.tec.br"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white font-mono text-xs font-bold shrink-0 transition-all flex items-center gap-1.5"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>Visitar maximo.tec.br</span>
+                    </a>
                   </div>
                 </div>
               </div>
