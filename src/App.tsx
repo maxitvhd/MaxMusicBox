@@ -18,6 +18,7 @@ import { KioskKeyboardHud } from './components/KioskKeyboardHud';
 import { AdBanner } from './components/AdBanner';
 import { Screensaver } from './components/Screensaver';
 import { useKioskKeyboardListener } from './hooks/useKioskKeyboardListener';
+import { useKioskScale } from './hooks/useKioskScale';
 import { audioEngine } from './services/audioEngine';
 import { tauriBridge } from './services/tauriBridge';
 import { bootstrapNative } from './services/nativeSync';
@@ -33,6 +34,9 @@ export default function App() {
   const setActiveSection = useJukeboxStore((s) => s.setActiveSection);
 
   const [centerTab, setCenterTab] = useState<'categories' | 'artists'>('categories');
+
+  // Escala o canvas fixo (1920x1080) para caber na resolução real da tela (kiosk)
+  const { scale, kioskW, kioskH } = useKioskScale();
 
   // Automatically switch tab if activeSection changes
   useEffect(() => {
@@ -71,14 +75,20 @@ export default function App() {
 
   return (
     <div
-      className={`h-screen w-screen overflow-hidden flex flex-col font-modern transition-colors duration-200 select-none ${
+      className={`fixed inset-0 overflow-hidden flex items-center justify-center select-none transition-colors duration-200 ${
         isVintage
           ? 'bg-[#131519] text-amber-100 selection:bg-amber-500 selection:text-black'
           : 'bg-[#090d18] text-slate-100 selection:bg-cyan-500 selection:text-black'
       }`}
     >
-      {/* Visual On-Screen HUD for Numpad inputs */}
-      <KioskKeyboardHud />
+      {/* Palco fixo 1920x1080, escalado para caber na tela (nada estoura da área clicável) */}
+      <div
+        id="mmb-stage"
+        className="flex flex-col overflow-hidden font-modern"
+        style={{ width: kioskW, height: kioskH, transform: `scale(${scale})` }}
+      >
+        {/* Visual On-Screen HUD for Numpad inputs */}
+        <KioskKeyboardHud />
 
       {/* Top Header - Fixed */}
       <Header />
@@ -193,6 +203,7 @@ export default function App() {
       <AccessibilityKeypadModal />
       <MusicBrowserModal />
       <Screensaver />
+      </div>
     </div>
   );
 }

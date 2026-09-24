@@ -216,6 +216,6 @@ export const UserLoginModal = () => {
         )}
       </div>
     </div>,
-    document.body
+    document.getElementById('mmb-stage') || document.body
   );
 };

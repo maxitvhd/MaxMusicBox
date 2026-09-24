@@ -651,6 +651,6 @@ export const PixModal = () => {
         )}
       </div>
     </div>,
-    document.body
+    document.getElementById('mmb-stage') || document.body
   );
 };
